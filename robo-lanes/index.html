@@ -117,6 +117,10 @@
             overflow-y: auto;
         }
         
+        #gameOverScreen .high-scores::-webkit-scrollbar {
+            display: none;
+        }
+        
         #gameOverScreen .high-scores h3 {
             font-size: 18px;
             color: #ffa502;
@@ -207,12 +211,22 @@
         const LASER_SPEED = 12;
         const LASER_WIDTH = 4;
         const LASER_HEIGHT = 20;
-        const LASER_CYCLE_DURATION = 60000; // 60 seconds total cycle
+        const LASER_COOLDOWN = 30000; // 30 seconds no laser
         const LASER_ACTIVE_DURATION = 10000; // 10 seconds laser active
+        const LASER_CYCLE_DURATION = (LASER_COOLDOWN + LASER_ACTIVE_DURATION) * 2; // 80 seconds total cycle
         
         // ==================== LOCAL STORAGE ====================
         const HIGH_SCORES_KEY = 'roboLanesHighScores';
+        const PLAYER_NAME_KEY = 'roboLanesPlayerName';
         const MAX_HIGH_SCORES = 10;
+        
+        function getSavedPlayerName() {
+            return localStorage.getItem(PLAYER_NAME_KEY) || 'Jonas';
+        }
+        
+        function savePlayerName(name) {
+            localStorage.setItem(PLAYER_NAME_KEY, name);
+        }
         
         function getHighScores() {
             const scores = localStorage.getItem(HIGH_SCORES_KEY);
@@ -279,6 +293,9 @@
             canvas = document.getElementById('gameCanvas');
             ctx = canvas.getContext('2d');
             
+            // Load saved player name
+            document.getElementById('playerName').value = getSavedPlayerName();
+            
             resetGame();
             setupControls();
             requestAnimationFrame(gameLoop);
@@ -305,6 +322,7 @@
         function startGame() {
             const nameInput = document.getElementById('playerName');
             playerName = nameInput.value.trim() || 'Jonas';
+            savePlayerName(playerName);
             
             document.getElementById('startScreen').classList.add('hidden');
             gameStarted = true;
@@ -414,9 +432,9 @@
             // Update game time
             gameTime += 16.67; // Approximate frame time
             
-            // Update laser active state (starts with laser off: first 50 seconds cooldown, then 10 seconds active)
+            // Update laser active state: 30s no laser → 10s laser → 30s no laser → 10s laser
             const cycleTime = gameTime % LASER_CYCLE_DURATION;
-            laserActive = cycleTime >= LASER_CYCLE_DURATION - LASER_ACTIVE_DURATION;
+            laserActive = (cycleTime >= LASER_COOLDOWN && cycleTime < LASER_COOLDOWN + LASER_ACTIVE_DURATION);
             
             // Update score
             score++;
@@ -771,6 +789,7 @@
         }
         
         function drawScore() {
+            // Score in center
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 28px Orbitron, monospace';
             ctx.textAlign = 'center';
@@ -778,6 +797,34 @@
             ctx.shadowBlur = 10;
             ctx.fillText(score.toString().padStart(6, '0'), CANVAS_WIDTH / 2, 45);
             ctx.shadowBlur = 0;
+            
+            // Elapsed time at top left with background
+            const elapsedSeconds = Math.floor(gameTime / 1000);
+            const minutes = Math.floor(elapsedSeconds / 60);
+            const seconds = elapsedSeconds % 60;
+            const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            
+            ctx.font = 'bold 20px Orbitron, monospace';
+            const timeWidth = ctx.measureText(timeStr).width;
+            
+            // Background for time
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            ctx.fillRect(10, 12, timeWidth + 16, 32);
+            
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#a4b0be';
+            ctx.fillText(timeStr, 18, 37);
+            
+            // Player name at top right with background
+            const nameWidth = ctx.measureText(playerName).width;
+            
+            // Background for name
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            ctx.fillRect(CANVAS_WIDTH - nameWidth - 26, 12, nameWidth + 16, 32);
+            
+            ctx.textAlign = 'right';
+            ctx.fillStyle = '#7bed9f';
+            ctx.fillText(playerName, CANVAS_WIDTH - 18, 37);
         }
         
         // ==================== GAME LOOP ====================
