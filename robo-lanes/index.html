@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -34,19 +34,66 @@
             display: block;
         }
         
-        #gameOverScreen {
+        .overlay {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
             background: rgba(0, 0, 0, 0.85);
-            display: none;
+            display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
             color: #fff;
             text-align: center;
+        }
+        
+        .overlay.hidden {
+            display: none;
+        }
+        
+        #startScreen h1 {
+            font-size: 36px;
+            color: #00d9ff;
+            text-shadow: 0 0 20px #00d9ff, 0 0 40px #00d9ff;
+            margin-bottom: 30px;
+            letter-spacing: 4px;
+        }
+        
+        #startScreen .name-input-container {
+            margin-bottom: 30px;
+        }
+        
+        #startScreen label {
+            font-size: 16px;
+            color: #a4b0be;
+            display: block;
+            margin-bottom: 10px;
+        }
+        
+        #startScreen input[type="text"] {
+            font-family: 'Orbitron', monospace;
+            font-size: 18px;
+            padding: 10px 20px;
+            border: 2px solid #00d9ff;
+            border-radius: 5px;
+            background: rgba(0, 217, 255, 0.1);
+            color: #fff;
+            text-align: center;
+            outline: none;
+            width: 200px;
+        }
+        
+        #startScreen input[type="text"]:focus {
+            border-color: #7bed9f;
+            box-shadow: 0 0 15px rgba(123, 237, 159, 0.3);
+        }
+        
+        #startScreen .start-hint {
+            font-size: 18px;
+            color: #7bed9f;
+            animation: pulse 1.5s infinite;
         }
         
         #gameOverScreen h1 {
@@ -60,8 +107,41 @@
         #gameOverScreen .final-score {
             font-size: 24px;
             color: #7bed9f;
-            margin-bottom: 30px;
+            margin-bottom: 15px;
             text-shadow: 0 0 10px #7bed9f;
+        }
+        
+        #gameOverScreen .high-scores {
+            margin-bottom: 25px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        #gameOverScreen .high-scores h3 {
+            font-size: 18px;
+            color: #ffa502;
+            margin-bottom: 10px;
+        }
+        
+        #gameOverScreen .high-scores ul {
+            list-style: none;
+            padding: 0;
+        }
+        
+        #gameOverScreen .high-scores li {
+            font-size: 14px;
+            color: #a4b0be;
+            margin: 5px 0;
+        }
+        
+        #gameOverScreen .high-scores li span {
+            color: #7bed9f;
+        }
+        
+        #gameOverScreen .high-scores li small {
+            font-size: 10px;
+            color: #636e72;
+            margin-left: 5px;
         }
         
         #gameOverScreen .restart-hint {
@@ -79,10 +159,26 @@
 <body>
     <div class="game-container">
         <canvas id="gameCanvas" width="600" height="800"></canvas>
-        <div id="gameOverScreen">
-            <h1>GAME OVER</h1>
-            <div class="final-score">Score: <span id="finalScore">0</span></div>
-            <div class="restart-hint">Press SPACE to restart</div>
+        
+        <!-- Start Screen -->
+        <div id="startScreen" class="overlay">
+            <h1>ROBO-LANES</h1>
+            <div class="name-input-container">
+                <label>Dein Name (optional):</label>
+                <input type="text" id="playerName" value="Jonas" maxlength="15">
+            </div>
+            <div class="start-hint">Leertaste zum Starten</div>
+        </div>
+        
+        <!-- Game Over Screen -->
+        <div id="gameOverScreen" class="overlay hidden">
+            <h1>SPIEL VORBEI</h1>
+            <div class="final-score">Punkte: <span id="finalScore">0</span></div>
+            <div class="high-scores">
+                <h3>Bestenliste:</h3>
+                <ul id="highScoresList"></ul>
+            </div>
+            <div class="restart-hint">Leertaste zum Neustart</div>
         </div>
     </div>
 
@@ -108,8 +204,46 @@
         
         const TRAFFIC_COLORS = ['#ff6b6b', '#ffa502', '#ffdd59', '#7bed9f', '#70a1ff', '#a55eea', '#ff6b9d'];
         
+        // ==================== LOCAL STORAGE ====================
+        const HIGH_SCORES_KEY = 'roboLanesHighScores';
+        const MAX_HIGH_SCORES = 10;
+        
+        function getHighScores() {
+            const scores = localStorage.getItem(HIGH_SCORES_KEY);
+            return scores ? JSON.parse(scores) : [];
+        }
+        
+        function saveHighScore(name, score) {
+            const scores = getHighScores();
+            const now = new Date();
+            const dateStr = now.toLocaleDateString('de-DE');
+            scores.push({ name: name, score: score, date: dateStr });
+            scores.sort((a, b) => b.score - a.score);
+            const topScores = scores.slice(0, MAX_HIGH_SCORES);
+            localStorage.setItem(HIGH_SCORES_KEY, JSON.stringify(topScores));
+            return topScores;
+        }
+        
+        function displayHighScores() {
+            const scores = getHighScores();
+            const list = document.getElementById('highScoresList');
+            list.innerHTML = '';
+            
+            if (scores.length === 0) {
+                list.innerHTML = '<li>Noch keine Einträge</li>';
+                return;
+            }
+            
+            scores.forEach((entry, index) => {
+                const li = document.createElement('li');
+                li.innerHTML = `${index + 1}. ${entry.name}: <span>${entry.score}</span> <small>(${entry.date})</small>`;
+                list.appendChild(li);
+            });
+        }
+        
         // ==================== GAME STATE ====================
         let canvas, ctx;
+        let gameStarted = false;
         let gameOver = false;
         let score = 0;
         let speed = INITIAL_SPEED;
@@ -117,6 +251,7 @@
         let lastSpawnTime = 0;
         let lineOffset = 0;
         let difficultyTimer = 0;
+        let playerName = 'Jonas';
         
         const player = {
             lane: 1,
@@ -152,14 +287,32 @@
             player.lane = 1;
             player.x = getLaneX(1);
             
-            document.getElementById('gameOverScreen').style.display = 'none';
+            document.getElementById('gameOverScreen').classList.add('hidden');
+        }
+        
+        function startGame() {
+            const nameInput = document.getElementById('playerName');
+            playerName = nameInput.value.trim() || 'Jonas';
+            
+            document.getElementById('startScreen').classList.add('hidden');
+            gameStarted = true;
+            resetGame();
         }
         
         // ==================== CONTROLS ====================
         function setupControls() {
             document.addEventListener('keydown', (e) => {
+                if (!gameStarted) {
+                    if (e.code === 'Space') {
+                        e.preventDefault();
+                        startGame();
+                    }
+                    return;
+                }
+                
                 if (gameOver) {
                     if (e.code === 'Space') {
+                        e.preventDefault();
                         resetGame();
                     }
                     return;
@@ -229,7 +382,7 @@
         
         // ==================== UPDATE ====================
         function update(timestamp) {
-            if (gameOver) return;
+            if (!gameStarted || gameOver) return;
             
             // Update score
             score++;
@@ -302,8 +455,14 @@
         
         function triggerGameOver() {
             gameOver = true;
+            
+            // Save high score
+            saveHighScore(playerName, score);
+            
+            // Update UI
             document.getElementById('finalScore').textContent = score;
-            document.getElementById('gameOverScreen').style.display = 'flex';
+            displayHighScores();
+            document.getElementById('gameOverScreen').classList.remove('hidden');
         }
         
         // ==================== DRAWING ====================
