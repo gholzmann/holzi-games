@@ -204,6 +204,12 @@
         
         const TRAFFIC_COLORS = ['#ff6b6b', '#ffa502', '#ffdd59', '#7bed9f', '#70a1ff', '#a55eea', '#ff6b9d'];
         
+        const LASER_SPEED = 12;
+        const LASER_WIDTH = 4;
+        const LASER_HEIGHT = 20;
+        const LASER_CYCLE_DURATION = 60000; // 60 seconds total cycle
+        const LASER_ACTIVE_DURATION = 10000; // 10 seconds laser active
+        
         // ==================== LOCAL STORAGE ====================
         const HIGH_SCORES_KEY = 'roboLanesHighScores';
         const MAX_HIGH_SCORES = 10;
@@ -252,6 +258,8 @@
         let lineOffset = 0;
         let difficultyTimer = 0;
         let playerName = 'Jonas';
+        let gameTime = 0;
+        let laserActive = false;
         
         const player = {
             lane: 1,
@@ -264,6 +272,7 @@
         };
         
         let traffic = [];
+        let lasers = [];
         
         // ==================== INITIALIZATION ====================
         function init() {
@@ -283,7 +292,10 @@
             lastSpawnTime = 0;
             difficultyTimer = 0;
             lineOffset = 0;
+            gameTime = 0;
+            laserActive = false;
             traffic = [];
+            lasers = [];
             player.lane = 1;
             player.x = getLaneX(1);
             
@@ -327,6 +339,12 @@
                     case 'KeyD':
                         movePlayer(1);
                         break;
+                    case 'Space':
+                        e.preventDefault();
+                        if (laserActive) {
+                            shootLaser();
+                        }
+                        break;
                 }
             });
         }
@@ -340,6 +358,15 @@
         
         function getLaneX(lane) {
             return ROAD_MARGIN + (lane * LANE_WIDTH) + (LANE_WIDTH / 2);
+        }
+        
+        function shootLaser() {
+            lasers.push({
+                x: player.x,
+                y: player.y - player.height / 2,
+                width: LASER_WIDTH,
+                height: LASER_HEIGHT
+            });
         }
         
         // ==================== SPAWNING ====================
@@ -384,6 +411,13 @@
         function update(timestamp) {
             if (!gameStarted || gameOver) return;
             
+            // Update game time
+            gameTime += 16.67; // Approximate frame time
+            
+            // Update laser active state (starts with laser off: first 50 seconds cooldown, then 10 seconds active)
+            const cycleTime = gameTime % LASER_CYCLE_DURATION;
+            laserActive = cycleTime >= LASER_CYCLE_DURATION - LASER_ACTIVE_DURATION;
+            
             // Update score
             score++;
             
@@ -401,6 +435,14 @@
             // Update player bob
             player.bobOffset += 0.1;
             
+            // Update lasers
+            for (let i = lasers.length - 1; i >= 0; i--) {
+                lasers[i].y -= LASER_SPEED;
+                if (lasers[i].y < -LASER_HEIGHT) {
+                    lasers.splice(i, 1);
+                }
+            }
+            
             // Spawn traffic
             spawnTraffic(timestamp);
             
@@ -416,11 +458,44 @@
                 }
             }
             
-            // Check collisions
+            // Check laser collisions
+            checkLaserCollisions();
+            
+            // Check player collisions
             checkCollisions();
         }
         
         // ==================== COLLISION ====================
+        function checkLaserCollisions() {
+            for (let i = lasers.length - 1; i >= 0; i--) {
+                const laser = lasers[i];
+                const laserBox = {
+                    x: laser.x - laser.width / 2,
+                    y: laser.y - laser.height / 2,
+                    width: laser.width,
+                    height: laser.height
+                };
+                
+                for (let j = traffic.length - 1; j >= 0; j--) {
+                    const t = traffic[j];
+                    const trafficBox = {
+                        x: t.x - t.width / 2,
+                        y: t.y - t.height / 2,
+                        width: t.width,
+                        height: t.height
+                    };
+                    
+                    if (rectsIntersect(laserBox, trafficBox)) {
+                        // Destroy robot and laser
+                        lasers.splice(i, 1);
+                        traffic.splice(j, 1);
+                        score += 50; // Bonus points for destroying robot
+                        break;
+                    }
+                }
+            }
+        }
+        
         function checkCollisions() {
             const hitboxShrink = 0.35;
             
@@ -474,16 +549,27 @@
             // Draw road
             drawRoad();
             
+            // Draw lasers
+            drawLasers();
+            
             // Draw traffic
             for (const t of traffic) {
                 drawRobot(t.x, t.y, t.width, t.height, t.color, t.bobOffset, false);
             }
             
-            // Draw player
-            drawRobot(player.x, player.y, player.width, player.height, player.color, player.bobOffset, true);
+            // Draw player (with blinking when laser is active)
+            const playerBlink = laserActive && Math.floor(gameTime / 150) % 2 === 0;
+            if (!playerBlink) {
+                drawRobot(player.x, player.y, player.width, player.height, player.color, player.bobOffset, true);
+            }
             
             // Draw score
             drawScore();
+            
+            // Draw laser status
+            if (laserActive) {
+                drawLaserStatus();
+            }
         }
         
         function drawRoad() {
@@ -511,6 +597,45 @@
             }
             
             ctx.setLineDash([]);
+        }
+        
+        function drawLasers() {
+            for (const laser of lasers) {
+                // Laser glow
+                ctx.shadowColor = '#00ffff';
+                ctx.shadowBlur = 15;
+                
+                // Laser beam
+                ctx.fillStyle = '#00ffff';
+                ctx.fillRect(
+                    laser.x - laser.width / 2,
+                    laser.y - laser.height / 2,
+                    laser.width,
+                    laser.height
+                );
+                
+                // Laser core (white center)
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(
+                    laser.x - laser.width / 4,
+                    laser.y - laser.height / 2,
+                    laser.width / 2,
+                    laser.height
+                );
+            }
+            ctx.shadowBlur = 0;
+        }
+        
+        function drawLaserStatus() {
+            // Draw "LASER" text with glow
+            ctx.fillStyle = '#ff4757';
+            ctx.font = 'bold 24px Orbitron, monospace';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = '#ff4757';
+            ctx.shadowBlur = 15;
+            ctx.fillText('LASER', CANVAS_WIDTH / 2, 80);
+            ctx.shadowBlur = 0;
         }
         
         function drawRobot(x, y, width, height, color, bobOffset, isPlayer) {
