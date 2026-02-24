@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot Duell - Duel Arena</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #0a0e14;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+        }
+        #gameCanvas {
+            border: 4px solid #2a3a4a;
+            border-radius: 8px;
+            box-shadow: 0 0 40px rgba(65, 105, 225, 0.3), 0 0 40px rgba(255, 140, 0, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="900" height="600"></canvas>
+    <script>
+        // ============ KONSTANTEN ============
+        const CANVAS_WIDTH = 900;
+        const CANVAS_HEIGHT = 600;
+        const ARENA_PADDING = 30;
+        const ARENA_LEFT = ARENA_PADDING;
+        const ARENA_RIGHT = CANVAS_WIDTH - ARENA_PADDING;
+        const ARENA_TOP = ARENA_PADDING;
+        const ARENA_BOTTOM = CANVAS_HEIGHT - ARENA_PADDING;
+        
+        const COLORS = {
+            background: '#0d1117',
+            arenaBackground: '#0d1117',
+            arenaBorder: '#2a3a4a',
+            gridDots: '#1a2030',
+            p1: '#4169E1',
+            p1Light: '#6b8cff',
+            p1Dark: '#2a4aaa',
+            p2: '#FF8C00',
+            p2Light: '#ffaa33',
+            p2Dark: '#cc6600',
+            bulletP1: '#6b8cff',
+            bulletP2: '#ffaa33',
+            particle: '#ffffff',
+            obstacle: '#1a2535',
+            obstacleBorder: '#3a4a5a',
+            text: '#e0e8f0',
+            hpBarBg: '#1a1a2e',
+            hpBarP1: '#4169E1',
+            hpBarP2: '#FF8C00'
+        };
+        
+        const PLAYER_HP = 7;
+        const WINNING_SCORE = 5;
+        const SHOOT_COOLDOWN = 220;
+        const BULLET_SPEED = 450;
+        const BULLET_LIFETIME = 1.2;
+        const PLAYER_SPEED = 220;
+        const ROUND_OVER_DELAY = 1.5;
+        
+        const PLAYER_WIDTH = 36;
+        const PLAYER_HEIGHT = 44;
+        const BULLET_RADIUS = 5;
+        
+        // ============ SOUND MANAGER ============
+        class SoundManager {
+            constructor() {
+                this.audioCtx = null;
+            }
+            
+            init() {
+                if (!this.audioCtx) {
+                    this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+            
+            playShoot(isPlayer1) {
+                this.init();
+                const ctx = this.audioCtx;
+                
+                // Create oscillator for shoot sound
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                
+                // Different pitch for each player
+                const baseFreq = isPlayer1 ? 880 : 660; // Higher for P1, lower for P2
+                
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.5, ctx.currentTime + 0.1);
+                
+                gain.gain.setValueAtTime(0.15, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+                
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                
+                osc.start(ctx.currentTime);
+                osc.stop(ctx.currentTime + 0.1);
+            }
+            
+            playHit() {
+                this.init();
+                const ctx = this.audioCtx;
+                
+                // Create noise-like hit sound using multiple oscillators
+                const osc1 = ctx.createOscillator();
+                const osc2 = ctx.createOscillator();
+                const gain = ctx.createGain();
+                
+                osc1.type = 'sawtooth';
+                osc1.frequency.setValueAtTime(200, ctx.currentTime);
+                osc1.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.15);
+                
+                osc2.type = 'square';
+                osc2.frequency.setValueAtTime(100, ctx.currentTime);
+                osc2.frequency.exponentialRampToValueAtTime(30, ctx.currentTime + 0.15);
+                
+                gain.gain.setValueAtTime(0.25, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+                
+                osc1.connect(gain);
+                osc2.connect(gain);
+                gain.connect(ctx.destination);
+                
+                osc1.start(ctx.currentTime);
+                osc1.stop(ctx.currentTime + 0.15);
+                osc2.start(ctx.currentTime);
+                osc2.stop(ctx.currentTime + 0.15);
+            }
+        }
+        
+        // ============ INPUT HANDLER ============
+        class InputHandler {
+            constructor() {
+                this.keys = {};
+                window.addEventListener('keydown', (e) => {
+                    this.keys[e.code] = true;
+                    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Space'].includes(e.code)) {
+                        e.preventDefault();
+                    }
+                });
+                window.addEventListener('keyup', (e) => {
+                    this.keys[e.code] = false;
+                });
+            }
+            
+            isDown(code) {
+                return this.keys[code] === true;
+            }
+        }
+        
+        // ============ VECTOR2 HILFSKLASSE ============
+        class Vec2 {
+            constructor(x = 0, y = 0) {
+                this.x = x;
+                this.y = y;
+            }
+            
+            static zero() { return new Vec2(0, 0); }
+            static up() { return new Vec2(0, -1); }
+            static right() { return new Vec2(1, 0); }
+            
+            normalize() {
+                const len = this.length;
+                if (len > 0) {
+                    return new Vec2(this.x / len, this.y / len);
+                }
+                return Vec2.zero();
+            }
+            
+            get length() {
+                return Math.sqrt(this.x * this.x + this.y * this.y);
+            }
+            
+            scale(s) {
+                return new Vec2(this.x * s, this.y * s);
+            }
+            
+            add(v) {
+                return new Vec2(this.x + v.x, this.y + v.y);
+            }
+            
+            clone() {
+                return new Vec2(this.x, this.y);
+            }
+        }
+        
+        // ============ PARTIKEL SYSTEM ============
+        class Particle {
+            constructor(x, y, vx, vy, color, lifetime) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.color = color;
+                this.lifetime = lifetime;
+                this.maxLifetime = lifetime;
+                this.size = 3 + Math.random() * 3;
+            }
+            
+            update(dt) {
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+                this.lifetime -= dt;
+                this.vx *= 0.95;
+                this.vy *= 0.95;
+            }
+            
+            draw(ctx) {
+                const alpha = Math.max(0, this.lifetime / this.maxLifetime);
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size * alpha, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+            }
+            
+            isDead() {
+                return this.lifetime <= 0;
+            }
+        }
+        
+        // ============ PROJEKTIL KLASSE ============
+        class Bullet {
+            constructor(x, y, vx, vy, ownerId) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.ownerId = ownerId;
+                this.lifetime = BULLET_LIFETIME;
+                this.radius = BULLET_RADIUS;
+            }
+            
+            update(dt) {
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+                this.lifetime -= dt;
+            }
+            
+            draw(ctx) {
+                const color = this.ownerId === 1 ? COLORS.bulletP1 : COLORS.bulletP2;
+                ctx.fillStyle = color;
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 10;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+            
+            isDead() {
+                return this.lifetime <= 0;
+            }
+            
+            getBounds() {
+                return {
+                    left: this.x - this.radius + 2,
+                    right: this.x + this.radius - 2,
+                    top: this.y - this.radius + 2,
+                    bottom: this.y + this.radius - 2
+                };
+            }
+        }
+        
+        // ============ HINDERNIS KLASSE ============
+        class Obstacle {
+            constructor(x, y, width, height) {
+                this.x = x;
+                this.y = y;
+                this.width = width;
+                this.height = height;
+            }
+            
+            draw(ctx) {
+                ctx.fillStyle = COLORS.obstacle;
+                ctx.strokeStyle = COLORS.obstacleBorder;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.roundRect(this.x, this.y, this.width, this.height, 4);
+                ctx.fill();
+                ctx.stroke();
+            }
+            
+            getBounds() {
+                return {
+                    left: this.x,
+                    right: this.x + this.width,
+                    top: this.y,
+                    bottom: this.y + this.height
+                };
+            }
+        }
+        
+        // ============ SPIELER KLASSE ============
+        class Player {
+            constructor(id, x, y, color, darkColor, lightColor) {
+                this.id = id;
+                this.x = x;
+                this.y = y;
+                this.width = PLAYER_WIDTH;
+                this.height = PLAYER_HEIGHT;
+                this.color = color;
+                this.darkColor = darkColor;
+                this.lightColor = lightColor;
+                this.hp = PLAYER_HP;
+                this.score = 0;
+                this.aimX = 0;
+                this.aimY = -1;
+                this.lastMoveDir = Vec2.up();
+                this.shootCooldown = 0;
+                this.hitFlash = 0;
+                this.bobOffset = Math.random() * Math.PI * 2;
+                this.alive = true;
+            }
+            
+            reset(x, y) {
+                this.x = x;
+                this.y = y;
+                this.hp = PLAYER_HP;
+                this.aimX = 0;
+                this.aimY = -1;
+                this.lastMoveDir = Vec2.up();
+                this.shootCooldown = 0;
+                this.hitFlash = 0;
+                this.alive = true;
+            }
+            
+            update(dt, input, obstacles, arenaBounds) {
+                if (!this.alive) return;
+                
+                this.shootCooldown = Math.max(0, this.shootCooldown - dt * 1000);
+                this.hitFlash = Math.max(0, this.hitFlash - dt * 1000);
+                this.bobOffset += dt * 3;
+                
+                // Bewegung
+                let dx = 0, dy = 0;
+                if (this.id === 1) {
+                    if (input.isDown('KeyW')) dy -= 1;
+                    if (input.isDown('KeyS')) dy += 1;
+                    if (input.isDown('KeyA')) dx -= 1;
+                    if (input.isDown('KeyD')) dx += 1;
+                } else {
+                    if (input.isDown('ArrowUp')) dy -= 1;
+                    if (input.isDown('ArrowDown')) dy += 1;
+                    if (input.isDown('ArrowLeft')) dx -= 1;
+                    if (input.isDown('ArrowRight')) dx += 1;
+                }
+                
+                // Aimrichtung aktualisieren wenn Bewegung vorhanden
+                if (dx !== 0 || dy !== 0) {
+                    const dir = new Vec2(dx, dy).normalize();
+                    this.aimX = dir.x;
+                    this.aimY = dir.y;
+                    this.lastMoveDir = dir;
+                }
+                
+                // Bewegung anwenden mit Kollision
+                const moveX = dx * PLAYER_SPEED * dt;
+                const moveY = dy * PLAYER_SPEED * dt;
+                
+                this.moveWithCollision(moveX, 0, obstacles, arenaBounds);
+                this.moveWithCollision(0, moveY, obstacles, arenaBounds);
+            }
+            
+            moveWithCollision(dx, dy, obstacles, arenaBounds) {
+                const newX = this.x + dx;
+                const newY = this.y + dy;
+                
+                // Arena Grenzen
+                const left = arenaBounds.left + this.width / 2;
+                const right = arenaBounds.right - this.width / 2;
+                const top = arenaBounds.top + this.height / 2;
+                const bottom = arenaBounds.bottom - this.height / 2;
+                
+                let canMove = true;
+                
+                // Spieler Hitbox
+                const playerBounds = {
+                    left: newX - this.width / 2 + 4,
+                    right: newX + this.width / 2 - 4,
+                    top: newY - this.height / 2 + 4,
+                    bottom: newY + this.height / 2 - 4
+                };
+                
+                // Arena Grenzen prüfen
+                if (playerBounds.left < left || playerBounds.right > right ||
+                    playerBounds.top < top || playerBounds.bottom > bottom) {
+                    canMove = false;
+                }
+                
+                // Hindernisse prüfen
+                if (canMove) {
+                    for (const obs of obstacles) {
+                        if (this.aabbCollision(playerBounds, obs.getBounds())) {
+                            canMove = false;
+                            break;
+                        }
+                    }
+                }
+                
+                if (canMove) {
+                    this.x = newX;
+                    this.y = newY;
+                }
+            }
+            
+            aabbCollision(a, b) {
+                return a.left < b.right && a.right > b.left &&
+                       a.top < b.bottom && a.bottom > b.top;
+            }
+            
+            shoot() {
+                if (this.shootCooldown > 0 || !this.alive) return null;
+                
+                this.shootCooldown = SHOOT_COOLDOWN;
+                
+                const speed = BULLET_SPEED;
+                const bullet = new Bullet(
+                    this.x + this.aimX * (this.width / 2 + 10),
+                    this.y + this.aimY * (this.height / 2 + 10),
+                    this.aimX * speed,
+                    this.aimY * speed,
+                    this.id
+                );
+                return bullet;
+            }
+            
+            takeDamage() {
+                this.hp--;
+                this.hitFlash = 150;
+                return this.hp <= 0;
+            }
+            
+            draw(ctx) {
+                if (!this.alive) return;
+                
+                const bobY = Math.sin(this.bobOffset) * 2;
+                const flashBoost = this.hitFlash > 0 ? 0.4 : 0;
+                
+                ctx.save();
+                ctx.translate(this.x, this.y + bobY);
+                
+                // Schatten
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.beginPath();
+                ctx.ellipse(0, this.height / 2 - 2, this.width / 2 - 4, 6, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Körper (abgerundetes Rechteck)
+                const bodyColor = this.hitFlash > 0 ? 
+                    this.lightColor : this.color;
+                
+                ctx.fillStyle = bodyColor;
+                ctx.strokeStyle = this.darkColor;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.roundRect(-this.width / 2, -this.height / 2, this.width, this.height, 8);
+                ctx.fill();
+                ctx.stroke();
+                
+                // Highlight/Panel Linien
+                ctx.strokeStyle = this.lightColor;
+                ctx.lineWidth = 1;
+                ctx.globalAlpha = 0.4;
+                ctx.beginPath();
+                ctx.moveTo(-this.width / 2 + 8, -this.height / 2 + 12);
+                ctx.lineTo(this.width / 2 - 8, -this.height / 2 + 12);
+                ctx.moveTo(-this.width / 2 + 8, 0);
+                ctx.lineTo(this.width / 2 - 8, 0);
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+                
+                // Augen (Glow Effekt)
+                const eyeY = -4;
+                const eyeSpacing = 7;
+                
+                // Glow
+                ctx.shadowColor = this.lightColor;
+                ctx.shadowBlur = 8 + flashBoost * 10;
+                
+                // Linkes Auge
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.ellipse(-eyeSpacing, eyeY, 4, 5, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Rechtes Auge
+                ctx.beginPath();
+                ctx.ellipse(eyeSpacing, eyeY, 4, 5, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Pupillen
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#111122';
+                ctx.beginPath();
+                ctx.arc(-eyeSpacing + this.aimX * 1.5, eyeY + this.aimY * 1.5, 2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(eyeSpacing + this.aimX * 1.5, eyeY + this.aimY * 1.5, 2, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Antenne
+                ctx.strokeStyle = this.darkColor;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(0, -this.height / 2);
+                ctx.lineTo(0, -this.height / 2 - 10);
+                ctx.stroke();
+                
+                // Antennenkugel
+                ctx.fillStyle = this.lightColor;
+                ctx.shadowColor = this.lightColor;
+                ctx.shadowBlur = 5;
+                ctx.beginPath();
+                ctx.arc(0, -this.height / 2 - 12, 3, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.restore();
+                
+                // Aim Indicator
+                this.drawAimIndicator(ctx);
+            }
+            
+            drawAimIndicator(ctx) {
+                if (!this.alive) return;
+                
+                const startX = this.x + this.aimX * (this.width / 2 + 2);
+                const startY = this.y + this.aimY * (this.height / 2 + 2);
+                const endX = startX + this.aimX * 15;
+                const endY = startY + this.aimY * 15;
+                
+                ctx.strokeStyle = this.lightColor;
+                ctx.lineWidth = 2;
+                ctx.globalAlpha = 0.6;
+                ctx.beginPath();
+                ctx.moveTo(startX, startY);
+                ctx.lineTo(endX, endY);
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+            }
+            
+            getBounds() {
+                return {
+                    left: this.x - this.width / 2 + 4,
+                    right: this.x + this.width / 2 - 4,
+                    top: this.y - this.height / 2 + 4,
+                    bottom: this.y + this.height / 2 - 4
+                };
+            }
+        }
+        
+        // ============ HAUPT SPIEL KLASSE ============
+        class Game {
+            constructor(canvas) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.input = new InputHandler();
+                this.sound = new SoundManager();
+                
+                this.particles = [];
+                this.bullets = [];
+                this.obstacles = [];
+                
+                this.screenShake = 0;
+                this.screenShakeIntensity = 0;
+                
+                this.setupArena();
+                this.setupPlayers();
+                
+                this.state = 'playing';
+                this.roundOverTimer = 0;
+                this.roundWinner = null;
+                
+                this.lastTime = 0;
+                this.gameLoop = this.gameLoop.bind(this);
+            }
+            
+            setupArena() {
+                this.randomizeObstacles();
+            }
+            
+            randomizeObstacles() {
+                const centerX = CANVAS_WIDTH / 2;
+                const centerY = CANVAS_HEIGHT / 2;
+                
+                // 5 statische Hindernisse: 1 Mitte + 4 gleichmäßig verteilt
+                this.obstacles = [
+                    // Mitte (Schutz beim Start)
+                    new Obstacle(centerX - 20, centerY - 15, 40, 40),
+                    // Links oben (näher an der Mitte, höher)
+                    new Obstacle(250, 140, 30, 50),
+                    // Rechts oben (näher an der Mitte, höher)
+                    new Obstacle(620, 140, 30, 50),
+                    // Links unten (näher an der Mitte, höher)
+                    new Obstacle(250, 410, 30, 50),
+                    // Rechts unten (näher an der Mitte, höher)
+                    new Obstacle(620, 410, 30, 50)
+                ];
+            }
+            
+            setupPlayers() {
+                const spawnDist = 120;
+                const centerX = CANVAS_WIDTH / 2;
+                const centerY = CANVAS_HEIGHT / 2;
+                
+                this.player1 = new Player(1, centerX - spawnDist, centerY, COLORS.p1, COLORS.p1Dark, COLORS.p1Light);
+                this.player2 = new Player(2, centerX + spawnDist, centerY, COLORS.p2, COLORS.p2Dark, COLORS.p2Light);
+            }
+            
+            resetRound() {
+                const spawnDist = 120;
+                const centerX = CANVAS_WIDTH / 2;
+                const centerY = CANVAS_HEIGHT / 2;
+                
+                this.player1.reset(centerX - spawnDist, centerY);
+                this.player2.reset(centerX + spawnDist, centerY);
+                this.bullets = [];
+                this.particles = [];
+                
+                this.state = 'playing';
+            }
+            
+            resetMatch() {
+                this.player1.score = 0;
+                this.player2.score = 0;
+                this.resetRound();
+            }
+            
+            update(dt) {
+                if (this.screenShake > 0) {
+                    this.screenShake -= dt * 1000;
+                }
+                
+                if (this.state === 'playing') {
+                    this.updatePlaying(dt);
+                } else if (this.state === 'roundOver') {
+                    this.roundOverTimer -= dt;
+                    if (this.roundOverTimer <= 0) {
+                        this.resetRound();
+                    }
+                } else if (this.state === 'matchOver') {
+                    if (this.input.isDown('KeyR')) {
+                        this.resetMatch();
+                    }
+                }
+                
+                // Partikel aktualisieren
+                this.particles = this.particles.filter(p => {
+                    p.update(dt);
+                    return !p.isDead();
+                });
+            }
+            
+            updatePlaying(dt) {
+                const arenaBounds = {
+                    left: ARENA_LEFT,
+                    right: ARENA_RIGHT,
+                    top: ARENA_TOP,
+                    bottom: ARENA_BOTTOM
+                };
+                
+                this.player1.update(dt, this.input, this.obstacles, arenaBounds);
+                this.player2.update(dt, this.input, this.obstacles, arenaBounds);
+                
+                // Schüsse
+                if (this.input.isDown('KeyF')) {
+                    const bullet = this.player1.shoot();
+                    if (bullet) {
+                        this.bullets.push(bullet);
+                        this.sound.playShoot(true); // P1 shoot sound
+                    }
+                }
+                if (this.input.isDown('Enter')) {
+                    const bullet = this.player2.shoot();
+                    if (bullet) {
+                        this.bullets.push(bullet);
+                        this.sound.playShoot(false); // P2 shoot sound
+                    }
+                }
+                
+                // Projektile aktualisieren & Kollisionen
+                this.bullets = this.bullets.filter(bullet => {
+                    bullet.update(dt);
+                    
+                    if (bullet.isDead()) return false;
+                    
+                    const bounds = bullet.getBounds();
+                    
+                    // Gegen Arena Grenzen
+                    if (bounds.left < ARENA_LEFT || bounds.right > ARENA_RIGHT ||
+                        bounds.top < ARENA_TOP || bounds.bottom > ARENA_BOTTOM) {
+                        this.createSparks(bullet.x, bullet.y, bullet.ownerId === 1 ? COLORS.bulletP1 : COLORS.bulletP2);
+                        return false;
+                    }
+                    
+                    // Gegen Hindernisse
+                    for (const obs of this.obstacles) {
+                        if (this.aabbCollision(bounds, obs.getBounds())) {
+                            this.createSparks(bullet.x, bullet.y, bullet.ownerId === 1 ? COLORS.bulletP1 : COLORS.bulletP2);
+                            return false;
+                        }
+                    }
+                    
+                    // Gegen Spieler
+                    if (bullet.ownerId === 1 && this.player2.alive) {
+                        if (this.aabbCollision(bounds, this.player2.getBounds())) {
+                            this.createSparks(bullet.x, bullet.y, COLORS.bulletP1);
+                            this.sound.playHit(); // Hit sound
+                            const died = this.player2.takeDamage();
+                            this.triggerScreenShake(5);
+                            if (died) {
+                                this.player1.score++;
+                                this.handleRoundOver(1);
+                            }
+                            return false;
+                        }
+                    }
+                    if (bullet.ownerId === 2 && this.player1.alive) {
+                        if (this.aabbCollision(bounds, this.player1.getBounds())) {
+                            this.createSparks(bullet.x, bullet.y, COLORS.bulletP2);
+                            this.sound.playHit(); // Hit sound
+                            const died = this.player1.takeDamage();
+                            this.triggerScreenShake(5);
+                            if (died) {
+                                this.player2.score++;
+                                this.handleRoundOver(2);
+                            }
+                            return false;
+                        }
+                    }
+                    
+                    return true;
+                });
+            }
+            
+            handleRoundOver(winnerId) {
+                this.player1.alive = false;
+                this.player2.alive = false;
+                
+                if (this.player1.score >= WINNING_SCORE || this.player2.score >= WINNING_SCORE) {
+                    this.state = 'matchOver';
+                    this.roundWinner = winnerId;
+                } else {
+                    this.state = 'roundOver';
+                    this.roundOverTimer = ROUND_OVER_DELAY;
+                    this.roundWinner = winnerId;
+                }
+            }
+            
+            aabbCollision(a, b) {
+                return a.left < b.right && a.right > b.left &&
+                       a.top < b.bottom && a.bottom > b.top;
+            }
+            
+            createSparks(x, y, color) {
+                for (let i = 0; i < 8; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = 50 + Math.random() * 100;
+                    this.particles.push(new Particle(
+                        x, y,
+                        Math.cos(angle) * speed,
+                        Math.sin(angle) * speed,
+                        color,
+                        0.3 + Math.random() * 0.2
+                    ));
+                }
+            }
+            
+            triggerScreenShake(intensity) {
+                this.screenShake = 100;
+                this.screenShakeIntensity = intensity;
+            }
+            
+            draw() {
+                const ctx = this.ctx;
+                
+                // Screen shake anwenden
+                ctx.save();
+                if (this.screenShake > 0) {
+                    const shakeX = (Math.random() - 0.5) * this.screenShakeIntensity * 2;
+                    const shakeY = (Math.random() - 0.5) * this.screenShakeIntensity * 2;
+                    ctx.translate(shakeX, shakeY);
+                }
+                
+                // Hintergrund
+                ctx.fillStyle = COLORS.background;
+                ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                
+                // Arena Bereich
+                ctx.fillStyle = COLORS.arenaBackground;
+                ctx.fillRect(ARENA_LEFT, ARENA_TOP, ARENA_RIGHT - ARENA_LEFT, ARENA_BOTTOM - ARENA_TOP);
+                
+                // Grid Punkte
+                ctx.fillStyle = COLORS.gridDots;
+                for (let x = ARENA_LEFT + 20; x < ARENA_RIGHT; x += 40) {
+                    for (let y = ARENA_TOP + 20; y < ARENA_BOTTOM; y += 40) {
+                        ctx.beginPath();
+                        ctx.arc(x, y, 1.5, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+                
+                // Arena Border
+                ctx.strokeStyle = COLORS.arenaBorder;
+                ctx.lineWidth = 4;
+                ctx.strokeRect(ARENA_LEFT, ARENA_TOP, ARENA_RIGHT - ARENA_LEFT, ARENA_BOTTOM - ARENA_TOP);
+                
+                // Hindernisse
+                for (const obs of this.obstacles) {
+                    obs.draw(ctx);
+                }
+                
+                // Partikel
+                for (const particle of this.particles) {
+                    particle.draw(ctx);
+                }
+                
+                // Projektile
+                for (const bullet of this.bullets) {
+                    bullet.draw(ctx);
+                }
+                
+                // Spieler
+                this.player1.draw(ctx);
+                this.player2.draw(ctx);
+                
+                ctx.restore();
+                
+                // HUD
+                this.drawHUD();
+            }
+            
+            drawHUD() {
+                const ctx = this.ctx;
+                
+                // HP Bars
+                this.drawHPBar(20, 20, this.player1, 'links');
+                this.drawHPBar(CANVAS_WIDTH - 220, 20, this.player2, 'rechts');
+                
+                // Steuerungs-Hinweise
+                ctx.font = '14px "Segoe UI", sans-serif';
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.textAlign = 'left';
+                ctx.fillText('P1: WASD + F', 20, CANVAS_HEIGHT - 20);
+                ctx.textAlign = 'right';
+                ctx.fillText('P2: Pfeile + Enter', CANVAS_WIDTH - 20, CANVAS_HEIGHT - 20);
+                
+                // Runde vorbei Overlay
+                if (this.state === 'roundOver') {
+                    this.drawOverlay('Spieler ' + this.roundWinner + ' gewinnt Runde!');
+                }
+                
+                // Match vorbei Overlay
+                if (this.state === 'matchOver') {
+                    this.drawOverlayLarge('Spieler ' + this.roundWinner + ' gewinnt das Match!', 'Drücke R für Neustart');
+                }
+            }
+            
+            drawHPBar(x, y, player, align) {
+                const ctx = this.ctx;
+                const barWidth = 200;
+                const barHeight = 20;
+                
+                ctx.textAlign = align === 'links' ? 'left' : 'right';
+                ctx.font = 'bold 16px "Segoe UI", sans-serif';
+                ctx.fillStyle = player.color;
+                const scoreText = align === 'links' ? 'P' + player.id + ' - ' + player.score : player.score + ' - P' + player.id;
+                ctx.fillText(scoreText, align === 'links' ? x + barWidth + 10 : x - 10, y + 16);
+                
+                // HP Bar Hintergrund
+                ctx.fillStyle = COLORS.hpBarBg;
+                const bgX = align === 'links' ? x : x;
+                ctx.fillRect(bgX, y + 24, barWidth, barHeight);
+                
+                // HP Bar Füllung
+                const hpWidth = (player.hp / PLAYER_HP) * (barWidth - 4);
+                ctx.fillStyle = player.id === 1 ? COLORS.hpBarP1 : COLORS.hpBarP2;
+                ctx.fillRect(bgX + 2, y + 26, hpWidth, barHeight - 4);
+                
+                // HP Bar Rahmen
+                ctx.strokeStyle = player.color;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(bgX, y + 24, barWidth, barHeight);
+                
+                // HP Text
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 12px "Segoe UI", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(player.hp + '/' + PLAYER_HP, bgX + barWidth / 2, y + 39);
+            }
+            
+            drawOverlay(text) {
+                const ctx = this.ctx;
+                
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                
+                ctx.font = 'bold 48px "Segoe UI", sans-serif';
+                ctx.fillStyle = '#ffffff';
+                ctx.textAlign = 'center';
+                ctx.shadowColor = '#000000';
+                ctx.shadowBlur = 10;
+                ctx.fillText(text, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+                ctx.shadowBlur = 0;
+            }
+            
+            drawOverlayLarge(mainText, subText) {
+                const ctx = this.ctx;
+                
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                
+                ctx.font = 'bold 56px "Segoe UI", sans-serif';
+                ctx.fillStyle = '#FFD700';
+                ctx.textAlign = 'center';
+                ctx.shadowColor = '#000000';
+                ctx.shadowBlur = 15;
+                ctx.fillText(mainText, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 30);
+                
+                ctx.font = '24px "Segoe UI", sans-serif';
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(subText, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 30);
+                ctx.shadowBlur = 0;
+            }
+            
+            gameLoop(timestamp) {
+                const dt = Math.min((timestamp - this.lastTime) / 1000, 0.1);
+                this.lastTime = timestamp;
+                
+                this.update(dt);
+                this.draw();
+                
+                requestAnimationFrame(this.gameLoop);
+            }
+            
+            start() {
+                this.lastTime = performance.now();
+                requestAnimationFrame(this.gameLoop);
+            }
+        }
+        
+        // Spiel starten
+        const canvas = document.getElementById('gameCanvas');
+        const game = new Game(canvas);
+        game.start();
+    </script>
+</body>
+</html>
