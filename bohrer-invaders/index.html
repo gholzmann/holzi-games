@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 Raketen Invaders</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #0a0a1a 0%, #1a1a3a 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Press Start 2P', cursive;
+            overflow: hidden;
+        }
+        
+        h1 {
+            color: #607d8b;
+            font-size: 28px;
+            margin-bottom: 20px;
+            text-shadow: 3px 3px 0 #37474f, 6px 6px 0 #000;
+            letter-spacing: 2px;
+        }
+        
+        #gameContainer {
+            position: relative;
+            border: 4px solid #ff5722;
+            border-radius: 8px;
+            box-shadow: 0 0 30px rgba(255, 87, 34, 0.5), inset 0 0 20px rgba(0,0,0,0.5);
+        }
+        
+        canvas {
+            display: block;
+            background: #000011;
+        }
+        
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            display: flex;
+            justify-content: space-between;
+            color: #fff;
+            font-size: 14px;
+            text-shadow: 2px 2px 0 #000;
+        }
+        
+        #score, #level, #lives {
+            background: rgba(0,0,0,0.7);
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 2px solid #ff5722;
+        }
+        
+        #instructions {
+            color: #aaa;
+            font-size: 10px;
+            margin-top: 15px;
+            text-align: center;
+            line-height: 1.8;
+        }
+        
+        #instructions span {
+            color: #ffeb3b;
+        }
+    </style>
+</head>
+<body>
+    <h1>🚀 RAKETEN INVADERS 🪵</h1>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="ui">
+            <div id="score">PUNKTE: 0</div>
+            <div id="level">LEVEL: 1</div>
+            <div id="lives">LEBEN: 3</div>
+        </div>
+    </div>
+    <div id="instructions">
+        <span>← →</span> oder <span>A D</span> bewegen | <span>LEERTASTE</span> schießen | <span>P</span> Pause
+    </div>
+
+    <script>
+        // ==================== GAME CONFIG ====================
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        const GAME_CONFIG = {
+            playerSpeed: 3,
+            bulletSpeed: 9,
+            enemyBaseSpeed: 0.3,
+            enemyDropDistance: 15,
+            bulletCooldown: 200,
+            enemyRows: 3,
+            enemyCols: 6,
+            enemyPadding: 20,
+            enemyWidth: 50,
+            enemyHeight: 40
+        };
+        
+        // ==================== GAME STATE ====================
+        let gameState = {
+            score: 0,
+            level: 1,
+            lives: 3,
+            isPaused: false,
+            isGameOver: false,
+            isGameWon: false,
+            gameStarted: false
+        };
+        
+        // ==================== SOUND SYSTEM ====================
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+        
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new AudioContext();
+            }
+        }
+        
+        function playSound(type) {
+            if (!audioCtx) return;
+            
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            switch(type) {
+                case 'shoot':
+                    oscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
+                    oscillator.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.1);
+                    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                    oscillator.start(audioCtx.currentTime);
+                    oscillator.stop(audioCtx.currentTime + 0.1);
+                    break;
+                case 'hit':
+                    oscillator.type = 'square';
+                    oscillator.frequency.setValueAtTime(200, audioCtx.currentTime);
+                    oscillator.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.2);
+                    gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+                    oscillator.start(audioCtx.currentTime);
+                    oscillator.stop(audioCtx.currentTime + 0.2);
+                    break;
+                case 'playerHit':
+                    oscillator.type = 'sawtooth';
+                    oscillator.frequency.setValueAtTime(300, audioCtx.currentTime);
+                    oscillator.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.5);
+                    gainNode.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+                    oscillator.start(audioCtx.currentTime);
+                    oscillator.stop(audioCtx.currentTime + 0.5);
+                    break;
+            }
+        }
+        
+        // ==================== STARS BACKGROUND ====================
+        const stars = [];
+        for (let i = 0; i < 100; i++) {
+            stars.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                size: Math.random() * 2 + 0.5,
+                brightness: Math.random()
+            });
+        }
+        
+        function drawBackground() {
+            // Dark space gradient
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#0a0a1a');
+            gradient.addColorStop(0.5, '#1a1a2e');
+            gradient.addColorStop(1, '#0f0f23');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Stars
+            stars.forEach(star => {
+                const flicker = 0.5 + Math.sin(Date.now() * 0.003 + star.brightness * 10) * 0.5;
+                ctx.fillStyle = `rgba(255, 255, 255, ${star.brightness * flicker})`;
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            
+            // Moon
+            ctx.fillStyle = '#f5f5dc';
+            ctx.beginPath();
+            ctx.arc(700, 80, 40, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#e8e8c8';
+            ctx.beginPath();
+            ctx.arc(690, 70, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(710, 90, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(705, 60, 6, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        // ==================== PLAYER ====================
+        const player = {
+            x: canvas.width / 2,
+            y: canvas.height - 60,
+            width: 60,
+            height: 40,
+            lastShot: 0,
+            isHit: false,
+            hitTimer: 0
+        };
+        
+        function drawPlayer() {
+            if (player.isHit) {
+                ctx.globalAlpha = 0.5 + Math.sin(Date.now() * 0.02) * 0.5;
+            }
+
+            // Draw a rocket
+            drawRocket(player.x, player.y, 1.5);
+
+            ctx.globalAlpha = 1;
+        }
+
+        // ==================== ROCKET DRAWING ====================
+        function drawRocket(x, y, scale = 1) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(scale, scale);
+
+            // Flame (animated)
+            const flameFlicker = 0.7 + Math.sin(Date.now() * 0.03) * 0.3;
+            const flameGrad = ctx.createLinearGradient(0, 15, 0, 15 + 22 * flameFlicker);
+            flameGrad.addColorStop(0, '#fff176');
+            flameGrad.addColorStop(0.4, '#ff9800');
+            flameGrad.addColorStop(1, 'rgba(255,87,34,0)');
+            ctx.fillStyle = flameGrad;
+            ctx.beginPath();
+            ctx.moveTo(-7, 15);
+            ctx.lineTo(0, 15 + 22 * flameFlicker);
+            ctx.lineTo(7, 15);
+            ctx.closePath();
+            ctx.fill();
+
+            // Left fin
+            ctx.fillStyle = '#c62828';
+            ctx.beginPath();
+            ctx.moveTo(-8, 5);
+            ctx.lineTo(-18, 18);
+            ctx.lineTo(-8, 15);
+            ctx.closePath();
+            ctx.fill();
+
+            // Right fin
+            ctx.beginPath();
+            ctx.moveTo(8, 5);
+            ctx.lineTo(18, 18);
+            ctx.lineTo(8, 15);
+            ctx.closePath();
+            ctx.fill();
+
+            // Rocket body
+            const bodyGrad = ctx.createLinearGradient(-10, 0, 10, 0);
+            bodyGrad.addColorStop(0, '#bdbdbd');
+            bodyGrad.addColorStop(0.3, '#ffffff');
+            bodyGrad.addColorStop(0.7, '#e0e0e0');
+            bodyGrad.addColorStop(1, '#9e9e9e');
+            ctx.fillStyle = bodyGrad;
+            ctx.beginPath();
+            ctx.roundRect(-10, -20, 20, 35, 5);
+            ctx.fill();
+
+            // Nose cone
+            ctx.fillStyle = '#e53935';
+            ctx.beginPath();
+            ctx.moveTo(-10, -20);
+            ctx.lineTo(10, -20);
+            ctx.lineTo(0, -38);
+            ctx.closePath();
+            ctx.fill();
+
+            // Window
+            ctx.fillStyle = '#29b6f6';
+            ctx.beginPath();
+            ctx.arc(0, -8, 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Window shine
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.beginPath();
+            ctx.arc(-2, -10, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Body stripe
+            ctx.fillStyle = '#e53935';
+            ctx.fillRect(-10, 5, 20, 5);
+
+            ctx.restore();
+        }
+        
+        // ==================== WOOD ENEMY DRAWING ====================
+        function drawWoodEnemy(x, y, scale = 1, color = '#8d6e63') {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(scale, scale);
+
+            const wobble = Math.sin(Date.now() * 0.008) * 0.08;
+            ctx.rotate(wobble);
+
+            // Log body
+            const grad = ctx.createLinearGradient(-18, 0, 18, 0);
+            grad.addColorStop(0,   '#4e342e');
+            grad.addColorStop(0.2, color);
+            grad.addColorStop(0.5, '#bcaaa4');
+            grad.addColorStop(0.8, color);
+            grad.addColorStop(1,   '#4e342e');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.roundRect(-18, -12, 36, 24, 4);
+            ctx.fill();
+
+            // Bark texture lines
+            ctx.strokeStyle = 'rgba(62,39,35,0.45)';
+            ctx.lineWidth = 1.2;
+            for (let i = 0; i < 5; i++) {
+                ctx.beginPath();
+                ctx.moveTo(-16, -8 + i * 5);
+                ctx.quadraticCurveTo(0, -10 + i * 5, 16, -8 + i * 5);
+                ctx.stroke();
+            }
+
+            // Left end cap (cut face)
+            ctx.fillStyle = '#d7ccc8';
+            ctx.beginPath();
+            ctx.ellipse(-18, 0, 5, 12, 0, 0, Math.PI * 2);
+            ctx.fill();
+            // Growth rings
+            ctx.strokeStyle = 'rgba(121,85,72,0.5)';
+            ctx.lineWidth = 0.8;
+            [4, 2.5, 1.2].forEach(r => {
+                ctx.beginPath();
+                ctx.ellipse(-18, 0, r, r * 2.4, 0, 0, Math.PI * 2);
+                ctx.stroke();
+            });
+
+            // Right end cap
+            ctx.fillStyle = '#d7ccc8';
+            ctx.beginPath();
+            ctx.ellipse(18, 0, 5, 12, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(121,85,72,0.5)';
+            ctx.lineWidth = 0.8;
+            [4, 2.5, 1.2].forEach(r => {
+                ctx.beginPath();
+                ctx.ellipse(18, 0, r, r * 2.4, 0, 0, Math.PI * 2);
+                ctx.stroke();
+            });
+
+            // Angry eyes (whites)
+            ctx.fillStyle = '#fff';
+            ctx.beginPath(); ctx.ellipse(-7, -3, 4, 4, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse( 7, -3, 4, 4, 0, 0, Math.PI * 2); ctx.fill();
+            // Pupils
+            ctx.fillStyle = '#1a1a1a';
+            ctx.beginPath(); ctx.arc(-7, -2, 2, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc( 7, -2, 2, 0, Math.PI * 2); ctx.fill();
+            // Angry eyebrows
+            ctx.strokeStyle = '#b71c1c';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.moveTo(-11, -8); ctx.lineTo(-4, -6); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo( 11, -8); ctx.lineTo(  4, -6); ctx.stroke();
+            // Grumpy mouth
+            ctx.beginPath();
+            ctx.moveTo(-5, 5);
+            ctx.quadraticCurveTo(0, 3, 5, 5);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+        
+        // ==================== ENEMIES ====================
+        let enemies = [];
+        let enemyDirection = 1;
+        let enemyMoveTimer = 0;
+        
+        const enemyColors = ['#8d6e63', '#a1887f', '#6d4c41', '#bcaaa4'];
+        
+        function initEnemies() {
+            enemies = [];
+            const startX = 80;
+            const startY = 60;
+            
+            for (let row = 0; row < GAME_CONFIG.enemyRows; row++) {
+                for (let col = 0; col < GAME_CONFIG.enemyCols; col++) {
+                    enemies.push({
+                        x: startX + col * (GAME_CONFIG.enemyWidth + GAME_CONFIG.enemyPadding),
+                        y: startY + row * (GAME_CONFIG.enemyHeight + GAME_CONFIG.enemyPadding),
+                        width: GAME_CONFIG.enemyWidth,
+                        height: GAME_CONFIG.enemyHeight,
+                        color: enemyColors[row % enemyColors.length],
+                        alive: true,
+                        wobble: Math.random() * Math.PI * 2
+                    });
+                }
+            }
+            enemyDirection = 1;
+        }
+        
+        function drawEnemies() {
+            enemies.forEach(enemy => {
+                if (!enemy.alive) return;
+                const wobbleOffset = Math.sin(Date.now() * 0.005 + enemy.wobble) * 3;
+                drawWoodEnemy(enemy.x + enemy.width/2, enemy.y + enemy.height/2 + wobbleOffset, 1.0, enemy.color);
+            });
+        }
+        
+        function updateEnemies() {
+            let moveDown = false;
+            let lowestEnemy = 0;
+            
+            enemies.forEach(enemy => {
+                if (enemy.alive) {
+                    if (enemy.y + enemy.height > lowestEnemy) {
+                        lowestEnemy = enemy.y + enemy.height;
+                    }
+                }
+            });
+            
+            if (lowestEnemy >= player.y - 20) {
+                gameState.lives = 0;
+                gameState.isGameOver = true;
+                playSound('playerHit');
+                return;
+            }
+            
+            const speed = GAME_CONFIG.enemyBaseSpeed + (gameState.level - 1) * 0.2;
+            enemyMoveTimer++;
+            
+            if (enemyMoveTimer > 30 / speed) {
+                enemyMoveTimer = 0;
+                
+                // Check if any enemy hit the edge
+                enemies.forEach(enemy => {
+                    if (enemy.alive) {
+                        if (enemy.x + enemy.width >= canvas.width - 20 || enemy.x <= 20) {
+                            moveDown = true;
+                        }
+                    }
+                });
+                
+                if (moveDown) {
+                    enemyDirection *= -1;
+                    enemies.forEach(enemy => {
+                        enemy.y += GAME_CONFIG.enemyDropDistance;
+                    });
+                } else {
+                    enemies.forEach(enemy => {
+                        enemy.x += enemyDirection * 20;
+                    });
+                }
+            }
+        }
+        
+        // ==================== BULLETS ====================
+        let bullets = [];
+        
+        const fireworkColors = [
+            { bodyShade1: '#e53935', bodyShade2: '#ff8a65', bandColor: '#ffeb3b', noseColor: '#b71c1c' },
+            { bodyShade1: '#1e88e5', bodyShade2: '#80d8ff', bandColor: '#ffffff', noseColor: '#0d47a1' },
+            { bodyShade1: '#43a047', bodyShade2: '#b9f6ca', bandColor: '#ffeb3b', noseColor: '#1b5e20' },
+            { bodyShade1: '#8e24aa', bodyShade2: '#ea80fc', bandColor: '#ffffff', noseColor: '#4a148c' },
+            { bodyShade1: '#f4511e', bodyShade2: '#ffccbc', bandColor: '#ffeb3b', noseColor: '#bf360c' },
+        ];
+
+        function createBullet() {
+            const now = Date.now();
+            if (now - player.lastShot > GAME_CONFIG.bulletCooldown) {
+                const colors = fireworkColors[Math.floor(Math.random() * fireworkColors.length)];
+                bullets.push({
+                    x: player.x,
+                    y: player.y - 20,
+                    width: 8,
+                    height: 18,
+                    speed: GAME_CONFIG.bulletSpeed,
+                    ...colors
+                });
+                player.lastShot = now;
+                playSound('shoot');
+            }
+        }
+        
+        function drawBullets() {
+            bullets.forEach(bullet => {
+                ctx.save();
+                ctx.translate(bullet.x, bullet.y);
+
+                // Flame trail (below the stick)
+                const flicker = 0.6 + Math.sin(Date.now() * 0.05 + bullet.x) * 0.4;
+                const trailGrad = ctx.createLinearGradient(0, 14, 0, 14 + 14 * flicker);
+                trailGrad.addColorStop(0, 'rgba(255,240,80,0.9)');
+                trailGrad.addColorStop(0.4, 'rgba(255,140,0,0.7)');
+                trailGrad.addColorStop(1,   'rgba(255,60,0,0)');
+                ctx.fillStyle = trailGrad;
+                ctx.beginPath();
+                ctx.moveTo(-2.5, 14);
+                ctx.lineTo(0, 14 + 14 * flicker);
+                ctx.lineTo(2.5, 14);
+                ctx.closePath();
+                ctx.fill();
+
+                // Stick
+                ctx.strokeStyle = '#5d4037';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(0, 2);
+                ctx.lineTo(0, 14);
+                ctx.stroke();
+
+                // Body of the fireworks rocket
+                const bodyGrad = ctx.createLinearGradient(-4, 0, 4, 0);
+                bodyGrad.addColorStop(0,   bullet.bodyShade1 || '#e53935');
+                bodyGrad.addColorStop(0.5, bullet.bodyShade2 || '#ff8a65');
+                bodyGrad.addColorStop(1,   bullet.bodyShade1 || '#e53935');
+                ctx.fillStyle = bodyGrad;
+                ctx.beginPath();
+                ctx.roundRect(-4, -10, 8, 12, 2);
+                ctx.fill();
+
+                // Decorative band
+                ctx.fillStyle = bullet.bandColor || '#ffeb3b';
+                ctx.fillRect(-4, -4, 8, 2.5);
+
+                // Nose cone
+                ctx.fillStyle = bullet.noseColor || '#b71c1c';
+                ctx.beginPath();
+                ctx.moveTo(-4, -10);
+                ctx.lineTo(4, -10);
+                ctx.lineTo(0, -18);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.restore();
+            });
+        }
+        
+        function updateBullets() {
+            bullets = bullets.filter(bullet => {
+                bullet.y -= bullet.speed;
+                return bullet.y > -20;
+            });
+        }
+        
+        // ==================== PARTICLES ====================
+        let particles = [];
+        
+        function createExplosion(x, y, color) {
+            for (let i = 0; i < 12; i++) {
+                const angle = (Math.PI * 2 / 12) * i;
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: Math.cos(angle) * (2 + Math.random() * 2),
+                    vy: Math.sin(angle) * (2 + Math.random() * 2),
+                    life: 1,
+                    color: color,
+                    size: 3 + Math.random() * 3
+                });
+            }
+        }
+        
+        function drawParticles() {
+            particles = particles.filter(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life -= 0.02;
+                p.vy += 0.1;
+                
+                if (p.life > 0) {
+                    ctx.globalAlpha = p.life;
+                    ctx.fillStyle = p.color;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                    return true;
+                }
+                return false;
+            });
+        }
+        
+        // ==================== COLLISION DETECTION ====================
+        function checkCollisions() {
+            bullets.forEach((bullet, bulletIndex) => {
+                enemies.forEach(enemy => {
+                    if (enemy.alive) {
+                        if (bullet.x > enemy.x && 
+                            bullet.x < enemy.x + enemy.width &&
+                            bullet.y > enemy.y && 
+                            bullet.y < enemy.y + enemy.height) {
+                            
+                            enemy.alive = false;
+                            bullets.splice(bulletIndex, 1);
+                            gameState.score += 10 * gameState.level;
+                            createExplosion(enemy.x + enemy.width/2, enemy.y + enemy.height/2, enemy.color);
+                            playSound('hit');
+                            
+                            // Check level complete
+                            if (enemies.every(e => !e.alive)) {
+                                gameState.level++;
+                                if (gameState.level > 5) {
+                                    gameState.isGameWon = true;
+                                } else {
+                                    initEnemies();
+                                }
+                            }
+                        }
+                    }
+                });
+            });
+        }
+        
+        // ==================== INPUT HANDLING ====================
+        const keys = {};
+        
+        document.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            keys[e.code] = true;
+            
+            if (e.code === 'Space') {
+                e.preventDefault();
+                if (!gameState.gameStarted || gameState.isGameOver || gameState.isGameWon) {
+                    startGame();
+                } else if (!gameState.isPaused) {
+                    createBullet();
+                }
+            }
+            
+            if (e.key === 'p' || e.key === 'P') {
+                if (gameState.gameStarted && !gameState.isGameOver && !gameState.isGameWon) {
+                    gameState.isPaused = !gameState.isPaused;
+                }
+            }
+            
+            initAudio();
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+            keys[e.code] = false;
+        });
+        
+        function handleInput() {
+            if (!gameState.gameStarted || gameState.isPaused || gameState.isGameOver || gameState.isGameWon) return;
+            
+            if (keys['ArrowLeft'] || keys['KeyA']) {
+                player.x = Math.max(30, player.x - GAME_CONFIG.playerSpeed);
+            }
+            if (keys['ArrowRight'] || keys['KeyD']) {
+                player.x = Math.min(canvas.width - 30, player.x + GAME_CONFIG.playerSpeed);
+            }
+        }
+        
+        // ==================== UI UPDATE ====================
+        function updateUI() {
+            document.getElementById('score').textContent = `PUNKTE: ${gameState.score}`;
+            document.getElementById('level').textContent = `LEVEL: ${gameState.level}`;
+            document.getElementById('lives').textContent = `LEBEN: ${gameState.lives}`;
+        }
+        
+        // ==================== SCREENS ====================
+        function drawStartScreen() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.fillStyle = '#ffeb3b';
+            ctx.font = '32px "Press Start 2P"';
+            ctx.textAlign = 'center';
+            ctx.fillText('RAKETEN', canvas.width/2, canvas.height/2 - 60);
+            ctx.fillText('INVADERS', canvas.width/2, canvas.height/2 - 20);
+
+            ctx.fillStyle = '#ff9800';
+            ctx.font = '16px "Press Start 2P"';
+            ctx.fillText('🚀 vs 🪵', canvas.width/2, canvas.height/2 + 20);
+            
+            ctx.fillStyle = '#fff';
+            ctx.font = '14px "Press Start 2P"';
+            ctx.fillText('DRÜCKE LEERTASTE', canvas.width/2, canvas.height/2 + 80);
+            ctx.fillText('ZUM STARTEN', canvas.width/2, canvas.height/2 + 100);
+            
+            ctx.fillStyle = '#aaa';
+            ctx.font = '10px "Press Start 2P"';
+            ctx.fillText('← → BEWEGEN | LEERTASTE SCHIESSEN', canvas.width/2, canvas.height/2 + 150);
+        }
+        
+        function drawPauseScreen() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.fillStyle = '#ffeb3b';
+            ctx.font = '32px "Press Start 2P"';
+            ctx.textAlign = 'center';
+            ctx.fillText('PAUSE', canvas.width/2, canvas.height/2);
+            
+            ctx.fillStyle = '#fff';
+            ctx.font = '12px "Press Start 2P"';
+            ctx.fillText('DRÜCKE P FÜR FORTSETZEN', canvas.width/2, canvas.height/2 + 50);
+        }
+        
+        function drawGameOverScreen() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.fillStyle = '#f44336';
+            ctx.font = '32px "Press Start 2P"';
+            ctx.textAlign = 'center';
+            ctx.fillText('GAME OVER', canvas.width/2, canvas.height/2 - 40);
+            
+            ctx.fillStyle = '#fff';
+            ctx.font = '16px "Press Start 2P"';
+            ctx.fillText(`PUNKTE: ${gameState.score}`, canvas.width/2, canvas.height/2 + 10);
+            ctx.fillText(`LEVEL: ${gameState.level}`, canvas.width/2, canvas.height/2 + 40);
+            
+            ctx.fillStyle = '#ff9800';
+            ctx.font = '12px "Press Start 2P"';
+            ctx.fillText('DRÜCKE LEERTASTE', canvas.width/2, canvas.height/2 + 100);
+            ctx.fillText('FÜR NEUSTART', canvas.width/2, canvas.height/2 + 120);
+        }
+        
+        function drawWinScreen() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.fillStyle = '#4caf50';
+            ctx.font = '28px "Press Start 2P"';
+            ctx.textAlign = 'center';
+            ctx.fillText('GEWONNEN!', canvas.width/2, canvas.height/2 - 40);
+            
+            ctx.fillStyle = '#ffeb3b';
+            ctx.font = '20px "Press Start 2P"';
+            ctx.fillText('🪵 ALLE HOLZSTÜCKE', canvas.width/2, canvas.height/2 + 10);
+            ctx.fillText('ABGESCHOSSEN! 🚀', canvas.width/2, canvas.height/2 + 40);
+            
+            ctx.fillStyle = '#fff';
+            ctx.font = '16px "Press Start 2P"';
+            ctx.fillText(`PUNKTE: ${gameState.score}`, canvas.width/2, canvas.height/2 + 90);
+            
+            ctx.fillStyle = '#ff9800';
+            ctx.font = '12px "Press Start 2P"';
+            ctx.fillText('DRÜCKE LEERTASTE', canvas.width/2, canvas.height/2 + 140);
+            ctx.fillText('FÜR NEUSTART', canvas.width/2, canvas.height/2 + 160);
+        }
+        
+        // ==================== GAME CONTROL ====================
+        function startGame() {
+            gameState = {
+                score: 0,
+                level: 1,
+                lives: 3,
+                isPaused: false,
+                isGameOver: false,
+                isGameWon: false,
+                gameStarted: true
+            };
+            player.x = canvas.width / 2;
+            bullets = [];
+            particles = [];
+            initEnemies();
+            initAudio();
+        }
+        
+        // ==================== MAIN GAME LOOP ====================
+        function gameLoop() {
+            drawBackground();
+            
+            if (!gameState.gameStarted) {
+                drawStartScreen();
+            } else if (gameState.isGameOver) {
+                drawPlayer();
+                drawEnemies();
+                drawGameOverScreen();
+            } else if (gameState.isGameWon) {
+                drawWinScreen();
+            } else if (gameState.isPaused) {
+                drawPlayer();
+                drawEnemies();
+                drawBullets();
+                drawPauseScreen();
+            } else {
+                handleInput();
+                drawPlayer();
+                drawEnemies();
+                drawBullets();
+                drawParticles();
+                
+                updateEnemies();
+                updateBullets();
+                checkCollisions();
+                updateUI();
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // ==================== START ====================
+        initEnemies();
+        gameLoop();
+    </script>
+</body>
+</html>
