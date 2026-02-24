@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robo-Lanes</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Orbitron', monospace;
+            overflow: hidden;
+        }
+        
+        .game-container {
+            position: relative;
+            box-shadow: 0 0 60px rgba(0, 255, 255, 0.3), 0 0 100px rgba(255, 0, 255, 0.2);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        canvas {
+            display: block;
+        }
+        
+        #gameOverScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #fff;
+            text-align: center;
+        }
+        
+        #gameOverScreen h1 {
+            font-size: 42px;
+            color: #ff4757;
+            text-shadow: 0 0 20px #ff4757, 0 0 40px #ff4757;
+            margin-bottom: 20px;
+            letter-spacing: 4px;
+        }
+        
+        #gameOverScreen .final-score {
+            font-size: 24px;
+            color: #7bed9f;
+            margin-bottom: 30px;
+            text-shadow: 0 0 10px #7bed9f;
+        }
+        
+        #gameOverScreen .restart-hint {
+            font-size: 16px;
+            color: #a4b0be;
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <canvas id="gameCanvas" width="600" height="800"></canvas>
+        <div id="gameOverScreen">
+            <h1>GAME OVER</h1>
+            <div class="final-score">Score: <span id="finalScore">0</span></div>
+            <div class="restart-hint">Press SPACE to restart</div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== GAME CONSTANTS ====================
+        const CANVAS_WIDTH = 600;
+        const CANVAS_HEIGHT = 800;
+        const NUM_LANES = 4;
+        const LANE_WIDTH = 120;
+        const ROAD_MARGIN = 60;
+        
+        const PLAYER_WIDTH = 32;
+        const PLAYER_HEIGHT = 44;
+        const PLAYER_Y = CANVAS_HEIGHT - 100;
+        
+        const TRAFFIC_WIDTH = 28;
+        const TRAFFIC_HEIGHT = 40;
+        
+        const INITIAL_SPEED = 3;
+        const MAX_SPEED = 10;
+        const INITIAL_SPAWN_INTERVAL = 1500;
+        const MIN_SPAWN_INTERVAL = 500;
+        
+        const TRAFFIC_COLORS = ['#ff6b6b', '#ffa502', '#ffdd59', '#7bed9f', '#70a1ff', '#a55eea', '#ff6b9d'];
+        
+        // ==================== GAME STATE ====================
+        let canvas, ctx;
+        let gameOver = false;
+        let score = 0;
+        let speed = INITIAL_SPEED;
+        let spawnInterval = INITIAL_SPAWN_INTERVAL;
+        let lastSpawnTime = 0;
+        let lineOffset = 0;
+        let difficultyTimer = 0;
+        
+        const player = {
+            lane: 1,
+            x: 0,
+            y: PLAYER_Y,
+            width: PLAYER_WIDTH,
+            height: PLAYER_HEIGHT,
+            color: '#00d9ff',
+            bobOffset: 0
+        };
+        
+        let traffic = [];
+        
+        // ==================== INITIALIZATION ====================
+        function init() {
+            canvas = document.getElementById('gameCanvas');
+            ctx = canvas.getContext('2d');
+            
+            resetGame();
+            setupControls();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        function resetGame() {
+            gameOver = false;
+            score = 0;
+            speed = INITIAL_SPEED;
+            spawnInterval = INITIAL_SPAWN_INTERVAL;
+            lastSpawnTime = 0;
+            difficultyTimer = 0;
+            lineOffset = 0;
+            traffic = [];
+            player.lane = 1;
+            player.x = getLaneX(1);
+            
+            document.getElementById('gameOverScreen').style.display = 'none';
+        }
+        
+        // ==================== CONTROLS ====================
+        function setupControls() {
+            document.addEventListener('keydown', (e) => {
+                if (gameOver) {
+                    if (e.code === 'Space') {
+                        resetGame();
+                    }
+                    return;
+                }
+                
+                switch(e.code) {
+                    case 'ArrowLeft':
+                    case 'KeyA':
+                        movePlayer(-1);
+                        break;
+                    case 'ArrowRight':
+                    case 'KeyD':
+                        movePlayer(1);
+                        break;
+                }
+            });
+        }
+        
+        function movePlayer(direction) {
+            player.lane += direction;
+            if (player.lane < 0) player.lane = 0;
+            if (player.lane >= NUM_LANES) player.lane = NUM_LANES - 1;
+            player.x = getLaneX(player.lane);
+        }
+        
+        function getLaneX(lane) {
+            return ROAD_MARGIN + (lane * LANE_WIDTH) + (LANE_WIDTH / 2);
+        }
+        
+        // ==================== SPAWNING ====================
+        function spawnTraffic(timestamp) {
+            if (timestamp - lastSpawnTime < spawnInterval) return;
+            
+            lastSpawnTime = timestamp;
+            
+            const availableLanes = [];
+            for (let i = 0; i < NUM_LANES; i++) {
+                let canSpawn = true;
+                
+                // Check for overlapping in same lane
+                for (const t of traffic) {
+                    if (t.lane === i && t.y < TRAFFIC_HEIGHT * 2) {
+                        canSpawn = false;
+                        break;
+                    }
+                }
+                
+                if (canSpawn) availableLanes.push(i);
+            }
+            
+            if (availableLanes.length === 0) return;
+            
+            const lane = availableLanes[Math.floor(Math.random() * availableLanes.length)];
+            const color = TRAFFIC_COLORS[Math.floor(Math.random() * TRAFFIC_COLORS.length)];
+            
+            traffic.push({
+                lane: lane,
+                x: getLaneX(lane),
+                y: -TRAFFIC_HEIGHT,
+                width: TRAFFIC_WIDTH,
+                height: TRAFFIC_HEIGHT,
+                color: color,
+                bobOffset: Math.random() * Math.PI * 2,
+                speed: speed * (0.8 + Math.random() * 0.4)
+            });
+        }
+        
+        // ==================== UPDATE ====================
+        function update(timestamp) {
+            if (gameOver) return;
+            
+            // Update score
+            score++;
+            
+            // Update line offset for scrolling effect
+            lineOffset = (lineOffset + speed) % 60;
+            
+            // Update difficulty
+            difficultyTimer++;
+            if (difficultyTimer > 600) { // Every ~10 seconds
+                difficultyTimer = 0;
+                speed = Math.min(speed + 0.5, MAX_SPEED);
+                spawnInterval = Math.max(spawnInterval - 100, MIN_SPAWN_INTERVAL);
+            }
+            
+            // Update player bob
+            player.bobOffset += 0.1;
+            
+            // Spawn traffic
+            spawnTraffic(timestamp);
+            
+            // Update traffic positions
+            for (let i = traffic.length - 1; i >= 0; i--) {
+                const t = traffic[i];
+                t.y += t.speed;
+                t.bobOffset += 0.08;
+                
+                // Remove off-screen traffic
+                if (t.y > CANVAS_HEIGHT + TRAFFIC_HEIGHT) {
+                    traffic.splice(i, 1);
+                }
+            }
+            
+            // Check collisions
+            checkCollisions();
+        }
+        
+        // ==================== COLLISION ====================
+        function checkCollisions() {
+            const hitboxShrink = 0.35;
+            
+            const playerBox = {
+                x: player.x - (player.width * (1 - hitboxShrink)) / 2,
+                y: player.y - (player.height * (1 - hitboxShrink)) / 2,
+                width: player.width * (1 - hitboxShrink),
+                height: player.height * (1 - hitboxShrink)
+            };
+            
+            for (const t of traffic) {
+                const trafficBox = {
+                    x: t.x - (t.width * (1 - hitboxShrink)) / 2,
+                    y: t.y - (t.height * (1 - hitboxShrink)) / 2,
+                    width: t.width * (1 - hitboxShrink),
+                    height: t.height * (1 - hitboxShrink)
+                };
+                
+                if (rectsIntersect(playerBox, trafficBox)) {
+                    triggerGameOver();
+                    return;
+                }
+            }
+        }
+        
+        function rectsIntersect(a, b) {
+            return a.x < b.x + b.width &&
+                   a.x + a.width > b.x &&
+                   a.y < b.y + b.height &&
+                   a.y + a.height > b.y;
+        }
+        
+        function triggerGameOver() {
+            gameOver = true;
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('gameOverScreen').style.display = 'flex';
+        }
+        
+        // ==================== DRAWING ====================
+        function draw() {
+            // Clear canvas
+            ctx.fillStyle = '#2d3436';
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            
+            // Draw road
+            drawRoad();
+            
+            // Draw traffic
+            for (const t of traffic) {
+                drawRobot(t.x, t.y, t.width, t.height, t.color, t.bobOffset, false);
+            }
+            
+            // Draw player
+            drawRobot(player.x, player.y, player.width, player.height, player.color, player.bobOffset, true);
+            
+            // Draw score
+            drawScore();
+        }
+        
+        function drawRoad() {
+            // Road background
+            ctx.fillStyle = '#1e272e';
+            ctx.fillRect(ROAD_MARGIN, 0, LANE_WIDTH * NUM_LANES, CANVAS_HEIGHT);
+            
+            // Road edges
+            ctx.fillStyle = '#feca57';
+            ctx.fillRect(ROAD_MARGIN - 4, 0, 4, CANVAS_HEIGHT);
+            ctx.fillRect(ROAD_MARGIN + LANE_WIDTH * NUM_LANES, 0, 4, CANVAS_HEIGHT);
+            
+            // Lane lines
+            ctx.strokeStyle = '#ffffff';
+            ctx.setLineDash([30, 30]);
+            ctx.lineDashOffset = -lineOffset;
+            ctx.lineWidth = 2;
+            
+            for (let i = 1; i < NUM_LANES; i++) {
+                const x = ROAD_MARGIN + (i * LANE_WIDTH);
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, CANVAS_HEIGHT);
+                ctx.stroke();
+            }
+            
+            ctx.setLineDash([]);
+        }
+        
+        function drawRobot(x, y, width, height, color, bobOffset, isPlayer) {
+            const bob = Math.sin(bobOffset) * 2;
+            const drawY = y + bob;
+            
+            // Shadow
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            ctx.beginPath();
+            ctx.ellipse(x, y + height / 2 + 8, width / 2 + 5, height / 8, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Antenna stalk (all robots)
+            ctx.strokeStyle = '#4a4a4a';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(x, drawY - height / 2);
+            ctx.lineTo(x, drawY - height / 2 - 15);
+            ctx.stroke();
+            
+            // Antenna ball with glow
+            const antennaGlow = isPlayer ? '#ff4757' : color;
+            ctx.shadowColor = antennaGlow;
+            ctx.shadowBlur = isPlayer ? 12 : 8;
+            ctx.fillStyle = antennaGlow;
+            ctx.beginPath();
+            ctx.arc(x, drawY - height / 2 - 17, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            
+            // Head (boxy robot head)
+            const headSize = width * 0.7;
+            ctx.fillStyle = color;
+            ctx.fillRect(x - headSize / 2, drawY - height / 2 - 5, headSize, headSize * 0.6);
+            
+            // Head highlight
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+            ctx.fillRect(x - headSize / 2 + 2, drawY - height / 2 - 3, headSize - 4, headSize * 0.2);
+            
+            // Eyes (large robot eyes - square with rounded corners)
+            const eyeY = drawY - height / 2 + 8;
+            const eyeSize = isPlayer ? 8 : 6;
+            const eyeGlow = isPlayer ? '#00ffff' : '#7bed9f';
+            
+            ctx.shadowColor = eyeGlow;
+            ctx.shadowBlur = isPlayer ? 15 : 10;
+            ctx.fillStyle = eyeGlow;
+            
+            // Left eye
+            ctx.beginPath();
+            ctx.roundRect(x - headSize / 3 - eyeSize / 2, eyeY, eyeSize, eyeSize, 2);
+            ctx.fill();
+            
+            // Right eye
+            ctx.beginPath();
+            ctx.roundRect(x + headSize / 3 - eyeSize / 2, eyeY, eyeSize, eyeSize, 2);
+            ctx.fill();
+            
+            ctx.shadowBlur = 0;
+            
+            // Eye inner glow
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.beginPath();
+            ctx.arc(x - headSize / 3, eyeY + 2, 2, 0, Math.PI * 2);
+            ctx.arc(x + headSize / 3, eyeY + 2, 2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Body (boxy torso)
+            const bodyWidth = width * 0.8;
+            const bodyHeight = height * 0.4;
+            ctx.fillStyle = color;
+            ctx.fillRect(x - bodyWidth / 2, drawY - height / 2 + headSize * 0.5, bodyWidth, bodyHeight);
+            
+            // Body detail panel
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.fillRect(x - bodyWidth / 3, drawY - height / 2 + headSize * 0.5 + 5, bodyWidth / 1.5, bodyHeight - 10);
+            
+            // Body lights (small indicators)
+            const lightColors = ['#ff6b6b', '#7bed9f', '#70a1ff'];
+            for (let i = 0; i < 3; i++) {
+                ctx.fillStyle = lightColors[i];
+                ctx.shadowColor = lightColors[i];
+                ctx.shadowBlur = 5;
+                ctx.beginPath();
+                ctx.arc(x - bodyWidth / 4 + (i * bodyWidth / 4), drawY - height / 2 + headSize * 0.5 + bodyHeight / 2, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.shadowBlur = 0;
+            
+            // Arms (robot arms with joints)
+            const armY = drawY - height / 4;
+            ctx.strokeStyle = '#5a5a5a';
+            ctx.lineWidth = 4;
+            
+            // Left arm
+            ctx.beginPath();
+            ctx.moveTo(x - bodyWidth / 2, armY);
+            ctx.lineTo(x - bodyWidth / 2 - 8, armY);
+            ctx.lineTo(x - bodyWidth / 2 - 12, armY + 15);
+            ctx.stroke();
+            
+            // Left hand (claw)
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(x - bodyWidth / 2 - 12, armY + 18, 5, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Right arm
+            ctx.beginPath();
+            ctx.moveTo(x + bodyWidth / 2, armY);
+            ctx.lineTo(x + bodyWidth / 2 + 8, armY);
+            ctx.lineTo(x + bodyWidth / 2 + 12, armY + 15);
+            ctx.stroke();
+            
+            // Right hand (claw)
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(x + bodyWidth / 2 + 12, armY + 18, 5, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Legs (robot legs)
+            const legY = drawY + height / 6;
+            ctx.fillStyle = '#5a5a5a';
+            ctx.fillRect(x - width / 3, drawY + headSize * 0.5 + bodyHeight - 5, 8, height / 4);
+            ctx.fillRect(x + width / 3 - 8, drawY + headSize * 0.5 + bodyHeight - 5, 8, height / 4);
+            
+            // Feet
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.roundRect(x - width / 3 - 4, drawY + height / 2 - 8, 16, 10, 2);
+            ctx.roundRect(x + width / 3 - 12, drawY + height / 2 - 8, 16, 10, 2);
+            ctx.fill();
+        }
+        
+        function drawScore() {
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 28px Orbitron, monospace';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = '#00ffff';
+            ctx.shadowBlur = 10;
+            ctx.fillText(score.toString().padStart(6, '0'), CANVAS_WIDTH / 2, 45);
+            ctx.shadowBlur = 0;
+        }
+        
+        // ==================== GAME LOOP ====================
+        function gameLoop(timestamp) {
+            update(timestamp);
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Start the game
+        init();
+    </script>
+</body>
+</html>
