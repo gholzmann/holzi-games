@@ -359,6 +359,7 @@
         let speed = INITIAL_SPEED;
         let spawnInterval = INITIAL_SPAWN_INTERVAL;
         let lastSpawnTime = 0;
+        let lastFrameTime = 0;
         let lineOffset = 0;
         let difficultyTimer = 0;
         let playerName = 'Jonas';
@@ -572,29 +573,32 @@
         }
         
         // ==================== UPDATE ====================
-        function update(timestamp) {
+        function update(timestamp, deltaTime) {
             if (!gameStarted || gameOver) return;
             
-            gameTime += 16.67;
+            // Normalize deltaTime to 60fps (16.67ms = 1 frame)
+            const timeScale = deltaTime / 16.67;
+            
+            gameTime += deltaTime;
             
             const cycleTime = gameTime % LASER_CYCLE_DURATION;
             laserActive = (cycleTime >= LASER_COOLDOWN && cycleTime < LASER_COOLDOWN + LASER_ACTIVE_DURATION);
             
-            score++;
+            score += timeScale;
             
-            lineOffset = (lineOffset + speed) % 60;
+            lineOffset = (lineOffset + speed * timeScale) % 60;
             
-            difficultyTimer++;
+            difficultyTimer += timeScale;
             if (difficultyTimer > 600) {
                 difficultyTimer = 0;
                 speed = Math.min(speed + 0.5, MAX_SPEED);
                 spawnInterval = Math.max(spawnInterval - 100, MIN_SPAWN_INTERVAL);
             }
             
-            player.bobOffset += 0.1;
+            player.bobOffset += 0.1 * timeScale;
             
             for (let i = lasers.length - 1; i >= 0; i--) {
-                lasers[i].y -= LASER_SPEED;
+                lasers[i].y -= LASER_SPEED * timeScale;
                 if (lasers[i].y < -LASER_HEIGHT) {
                     lasers.splice(i, 1);
                 }
@@ -604,20 +608,22 @@
             
             for (let i = traffic.length - 1; i >= 0; i--) {
                 const t = traffic[i];
-                t.y += t.speed;
-                t.bobOffset += 0.08;
+                t.y += t.speed * timeScale;
+                t.bobOffset += 0.08 * timeScale;
                 
                 if (t.y > CANVAS_HEIGHT + TRAFFIC_HEIGHT) {
                     traffic.splice(i, 1);
                 }
             }
             
-            checkLaserCollisions();
+            checkLaserCollisions(deltaTime);
             checkCollisions();
         }
         
         // ==================== COLLISION ====================
-        function checkLaserCollisions() {
+        function checkLaserCollisions(deltaTime) {
+            const timeScale = deltaTime / 16.67;
+            
             for (let i = lasers.length - 1; i >= 0; i--) {
                 const laser = lasers[i];
                 const laserBox = {
@@ -639,7 +645,7 @@
                     if (rectsIntersect(laserBox, trafficBox)) {
                         lasers.splice(i, 1);
                         traffic.splice(j, 1);
-                        score += 50;
+                        score += 50 * timeScale;
                         break;
                     }
                 }
@@ -680,8 +686,8 @@
         
         function triggerGameOver() {
             gameOver = true;
-            saveHighScore(playerName, score);
-            document.getElementById('finalScore').textContent = score;
+            saveHighScore(playerName, Math.floor(score));
+            document.getElementById('finalScore').textContent = Math.floor(score);
             displayHighScores();
             document.getElementById('gameOverScreen').classList.remove('hidden');
         }
@@ -1157,12 +1163,14 @@
         }
         
         function drawScore() {
+            const displayScore = Math.floor(score);
+            
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 28px Orbitron, monospace';
             ctx.textAlign = 'center';
             ctx.shadowColor = '#00ffff';
             ctx.shadowBlur = 10;
-            ctx.fillText(score.toString().padStart(6, '0'), CANVAS_WIDTH / 2, 45);
+            ctx.fillText(displayScore.toString().padStart(6, '0'), CANVAS_WIDTH / 2, 45);
             ctx.shadowBlur = 0;
             
             const elapsedSeconds = Math.floor(gameTime / 1000);
@@ -1192,7 +1200,11 @@
         
         // ==================== GAME LOOP ====================
         function gameLoop(timestamp) {
-            update(timestamp);
+            if (!lastFrameTime) lastFrameTime = timestamp;
+            const deltaTime = timestamp - lastFrameTime;
+            lastFrameTime = timestamp;
+            
+            update(timestamp, deltaTime);
             draw();
             requestAnimationFrame(gameLoop);
         }
