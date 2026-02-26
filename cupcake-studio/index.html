@@ -1,0 +1,1429 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cupcake Studio - Laden</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Nunito', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            transition: background-color 0.5s ease;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        }
+        
+        h1 {
+            color: #5a4a6b;
+            font-size: 2.2rem;
+            margin-bottom: 15px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .game-container {
+            display: flex;
+            gap: 20px;
+            max-width: 1100px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
+        .scene {
+            display: none;
+        }
+        
+        .scene.active {
+            display: flex;
+        }
+        
+        .canvas-container {
+            background: white;
+            border-radius: 20px;
+            padding: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        }
+        
+        canvas {
+            display: block;
+            border-radius: 15px;
+        }
+        
+        .controls {
+            background: white;
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            width: 280px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .control-section {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .control-section h3 {
+            color: #7a6a8b;
+            font-size: 0.95rem;
+            margin-bottom: 3px;
+        }
+        
+        .color-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        
+        .color-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 3px solid transparent;
+            cursor: pointer;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+        
+        .color-btn:hover {
+            transform: scale(1.1);
+        }
+        
+        .color-btn.active {
+            border-color: #5a4a6b;
+            transform: scale(1.1);
+        }
+        
+        .btn {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 25px;
+            font-family: 'Nunito', sans-serif;
+            font-size: 0.9rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(0,0,0,0.15);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+            color: #5a4a6b;
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            color: #5a4a6b;
+        }
+        
+        .btn-toggle {
+            background: linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%);
+            color: #5a4a6b;
+        }
+        
+        .btn-toggle.active {
+            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+        }
+        
+        .btn-reset {
+            background: linear-gradient(135deg, #ff758c 0%, #ff7eb3 100%);
+            color: white;
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+            color: #5a4a6b;
+        }
+        
+        .btn-large {
+            font-size: 1.1rem;
+            padding: 15px;
+        }
+        
+        .topping-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        
+        .topping-btn {
+            padding: 6px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 18px;
+            background: white;
+            font-family: 'Nunito', sans-serif;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .topping-btn:hover {
+            border-color: #ff9a9e;
+            background: #fff5f5;
+        }
+        
+        .topping-btn.active {
+            background: #ff9a9e;
+            border-color: #ff9a9e;
+            color: white;
+        }
+        
+        .bg-buttons {
+            display: flex;
+            gap: 6px;
+        }
+        
+        .bg-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 3px solid transparent;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .bg-btn:hover {
+            transform: scale(1.1);
+        }
+        
+        .bg-btn.active {
+            border-color: #5a4a6b;
+        }
+        
+        .button-row {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .button-row .btn {
+            flex: 1;
+        }
+        
+        /* Store specific styles */
+        .store-scene {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+        }
+        
+        .store-visual {
+            background: white;
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            width: 420px;
+            height: 500px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            gap: 15px;
+        }
+        
+        .customer {
+            font-size: 8rem;
+            margin-bottom: 20px;
+        }
+        
+        .speech-bubble {
+            background: #FFF5F5;
+            border: 3px solid #ff9a9e;
+            border-radius: 20px;
+            padding: 20px;
+            max-width: 280px;
+            text-align: center;
+            position: relative;
+        }
+        
+        .speech-bubble::after {
+            content: '';
+            position: absolute;
+            bottom: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 15px 15px 0;
+            border-style: solid;
+            border-color: #ff9a9e transparent transparent;
+        }
+        
+        .speech-bubble::before {
+            content: '';
+            position: absolute;
+            bottom: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 12px 12px 0;
+            border-style: solid;
+            border-color: #FFF5F5 transparent transparent;
+            z-index: 1;
+        }
+        
+        .order-list {
+            background: #FFFEF5;
+            border: 3px solid #f6d365;
+            border-radius: 15px;
+            padding: 12px;
+            width: 250px;
+        }
+        
+        .order-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid #eee;
+            font-size: 0.85rem;
+        }
+        
+        .order-item:last-child {
+            border-bottom: none;
+        }
+        
+        .order-item span:first-child {
+            flex-shrink: 0;
+        }
+        
+        .order-item span:last-child {
+            text-align: right;
+            margin-left: 10px;
+        }
+        
+        .order-list h3 {
+            color: #5a4a6b;
+            margin-bottom: 10px;
+            text-align: center;
+            border-bottom: 2px dashed #f6d365;
+            padding-bottom: 10px;
+        }
+        
+        .order-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .order-item:last-child {
+            border-bottom: none;
+        }
+        
+        .order-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: inline-block;
+            border: 2px solid #ddd;
+        }
+        
+        /* Kitchen scene - NEW LAYOUT */
+        .kitchen-scene {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+        }
+        
+        .machine-area {
+            background: white;
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            width: 280px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .machine-area.hidden {
+            display: none;
+        }
+        
+        .decoration-area {
+            background: white;
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            width: 280px;
+            display: none;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .decoration-area.visible {
+            display: flex;
+        }
+        
+        .waffle-machine {
+            width: 200px;
+            height: 150px;
+            background: linear-gradient(135deg, #8B4513 0%, #A0522D 100%);
+            border-radius: 15px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+        }
+        
+        .waffle-machine::before {
+            content: '';
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            height: 30px;
+            background: #654321;
+            border-radius: 10px;
+        }
+        
+        .machine-status {
+            color: #5a4a6b;
+            font-weight: 700;
+            text-align: center;
+        }
+        
+        .waffle-result {
+            width: 120px;
+            height: 120px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .waffle-result.show {
+            display: flex;
+        }
+        
+        /* Score display */
+        .score-display {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px 25px;
+            border-radius: 30px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.15);
+            font-size: 1.2rem;
+            color: #5a4a6b;
+            font-weight: 700;
+        }
+        
+        /* Navigation buttons */
+        .nav-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        /* Result overlay */
+        .result-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+        
+        .result-overlay.show {
+            display: flex;
+        }
+        
+        .result-box {
+            background: white;
+            border-radius: 30px;
+            padding: 40px;
+            text-align: center;
+            max-width: 400px;
+            animation: popIn 0.5s ease;
+        }
+        
+        @keyframes popIn {
+            from {
+                transform: scale(0.5);
+                opacity: 0;
+            }
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+        
+        .result-emoji {
+            font-size: 5rem;
+            margin-bottom: 20px;
+        }
+        
+        .result-title {
+            color: #5a4a6b;
+            font-size: 1.8rem;
+            margin-bottom: 10px;
+        }
+        
+        .result-message {
+            color: #7a6a8b;
+            margin-bottom: 25px;
+        }
+        
+        .order-check {
+            background: #f9f9f9;
+            border-radius: 15px;
+            padding: 15px;
+            margin-bottom: 25px;
+            text-align: left;
+        }
+        
+        .check-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 5px 0;
+        }
+        
+        .check-item.correct {
+            color: #4CAF50;
+        }
+        
+        .check-item.wrong {
+            color: #f44336;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧁 Cupcake Studio 🧁</h1>
+    
+    <div class="score-display">
+        Punktestand: <span id="score">0</span>
+    </div>
+    
+    <!-- STORE SCENE -->
+    <div class="game-container scene active" id="storeScene">
+        <div class="store-visual">
+            <div class="customer" id="customerEmoji">👧</div>
+            <div class="speech-bubble">
+                <p id="customerSpeech">Hallo! Ich möchte einen Cupcake bestellen!</p>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <div class="control-section">
+                <div class="order-list">
+                    <h3>📝 Bestellung</h3>
+                    <div class="order-item">
+                        <span>Frosting:</span>
+                        <span class="order-color" id="orderFrosting"></span>
+                    </div>
+                    <div class="order-item">
+                        <span>Topping:</span>
+                        <span id="orderTopping">-</span>
+                    </div>
+                    <div class="order-item">
+                        <span>Streusel:</span>
+                        <span id="orderSprinkles">Nein</span>
+                    </div>
+                    <div class="order-item">
+                        <span>Schoko-Guss:</span>
+                        <span id="orderDrizzle">Nein</span>
+                    </div>
+                    <div class="order-item">
+                        <span>Glitzer:</span>
+                        <span id="orderGlitter">Nein</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="control-section">
+                <button class="btn btn-success btn-large" onclick="goToKitchen()">
+                    👩‍🍳 In die Küche
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- KITCHEN SCENE -->
+    <div class="game-container scene" id="kitchenScene">
+        <!-- Waffle Machine Area (shown first) -->
+        <div class="machine-area" id="machineArea">
+            <h3>🍪 Waffel-Maschine</h3>
+            <div class="waffle-machine">
+                <canvas id="machineCanvas" width="180" height="100"></canvas>
+            </div>
+            <div class="waffle-result" id="waffleResult">
+                <canvas id="waffleCanvas" width="120" height="120"></canvas>
+            </div>
+            <p class="machine-status" id="machineStatus">Bereit zum Backen!</p>
+            <button class="btn btn-primary" id="bakeBtn" onclick="bakeWaffle()">
+                🔥 Waffel backen
+            </button>
+            
+            <div style="margin-top: 20px; width: 100%;">
+                <button class="btn btn-reset" onclick="backToStore()">
+                    🔙 Zurück zum Laden
+                </button>
+            </div>
+        </div>
+        
+        <!-- Cupcake Canvas (always visible) -->
+        <div class="canvas-container">
+            <canvas id="cupcakeCanvas" width="500" height="500"></canvas>
+        </div>
+        
+        <!-- Decoration Controls (shown after waffle is baked) -->
+        <div class="decoration-area" id="decorationArea">
+            <div class="control-section">
+                <h3>Frosting Farbe</h3>
+                <div class="color-buttons" id="frostingColors"></div>
+            </div>
+            
+            <div class="control-section">
+                <h3>Streusel</h3>
+                <div class="button-row">
+                    <button class="btn btn-primary" onclick="addSprinkles()">+ Streusel</button>
+                    <button class="btn btn-secondary" onclick="clearSprinkles()">Löschen</button>
+                </div>
+            </div>
+            
+            <div class="control-section">
+                <h3>Topping</h3>
+                <div class="topping-buttons" id="toppingButtons"></div>
+            </div>
+            
+            <div class="control-section">
+                <h3>Extras</h3>
+                <div class="button-row">
+                    <button class="btn btn-toggle" id="drizzleBtn" onclick="toggleDrizzle()">Schoko-Guss</button>
+                    <button class="btn btn-toggle" id="glitterBtn" onclick="toggleGlitter()">Glitzer</button>
+                </div>
+            </div>
+            
+            <div class="control-section">
+                <button class="btn btn-success btn-large" onclick="finishOrder()">
+                    ✅ Bestellung fertig!
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- RESULT OVERLAY -->
+    <div class="result-overlay" id="resultOverlay">
+        <div class="result-box">
+            <div class="result-emoji" id="resultEmoji">🎉</div>
+            <h2 class="result-title" id="resultTitle">Super!</h2>
+            <p class="result-message" id="resultMessage">Dein Cupcake ist perfekt!</p>
+            <div class="order-check" id="orderCheck"></div>
+            <button class="btn btn-primary btn-large" onclick="nextCustomer()">
+                Nächster Kunde →
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Game State
+        const gameState = {
+            score: 0,
+            currentOrder: null,
+            waffleBaked: false,
+            customerIndex: 0
+        };
+        
+        // Cupcake State
+        const state = {
+            frostingColor: '#FFB6C1',
+            sprinkles: [],
+            topping: null,
+            drizzle: false,
+            glitter: false,
+            backgroundColor: '#FFF5F5',
+            extras: []
+        };
+        
+        // Colors
+        const frostingColors = [
+            { name: 'Pink', color: '#FFB6C1' },
+            { name: 'Lila', color: '#DDA0DD' },
+            { name: 'Blau', color: '#87CEEB' },
+            { name: 'Gelb', color: '#FFFACD' },
+            { name: 'Mint', color: '#98FB98' },
+            { name: 'Weiß', color: '#FFFAFA' }
+        ];
+        
+        const toppings = [
+            { name: 'Kirsche', type: 'cherry' },
+            { name: 'Erdbeere', type: 'strawberry' },
+            { name: 'Heidelbeere', type: 'blueberry' },
+            { name: 'Stern', type: 'star' },
+            { name: 'Herz', type: 'heart' }
+        ];
+        
+        const bgColors = [
+            { name: 'Rosa', color: '#FFF5F5' },
+            { name: 'Lavendel', color: '#F3E5F5' },
+            { name: 'Mint', color: '#E8F5E9' },
+            { name: 'Hellblau', color: '#E3F2FD' },
+            { name: 'Pfirsich', color: '#FFF3E0' }
+        ];
+        
+        const sprinkleColors = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#95E1D3', '#F38181', '#AA96DA', '#FCBAD3', '#A8D8EA'];
+        
+        const customers = ['👧', '👦', '👩', '👨', '👵', '👴', '👸', '🤴', '🧑', '👱'];
+        
+        // Canvas setup
+        const canvas = document.getElementById('cupcakeCanvas');
+        const ctx = canvas.getContext('2d');
+        const machineCanvas = document.getElementById('machineCanvas');
+        const machineCtx = machineCanvas.getContext('2d');
+        const waffleCanvas = document.getElementById('waffleCanvas');
+        const waffleCtx = waffleCanvas.getContext('2d');
+        
+        // Initialize game
+        function initGame() {
+            generateNewOrder();
+            initUI();
+            drawMachineIdle();
+            drawCupcake();
+        }
+        
+        function generateNewOrder() {
+            const frosting = frostingColors[Math.floor(Math.random() * frostingColors.length)];
+            const topping = Math.random() > 0.3 ? toppings[Math.floor(Math.random() * toppings.length)] : null;
+            
+            gameState.currentOrder = {
+                frostingColor: frosting.color,
+                frostingName: frosting.name,
+                topping: topping ? topping.type : null,
+                toppingName: topping ? topping.name : 'Keins',
+                sprinkles: Math.random() > 0.5,
+                drizzle: Math.random() > 0.6,
+                glitter: Math.random() > 0.6
+            };
+            
+            gameState.waffleBaked = false;
+            gameState.customerIndex = Math.floor(Math.random() * customers.length);
+            
+            updateOrderDisplay();
+        }
+        
+        function updateOrderDisplay() {
+            const order = gameState.currentOrder;
+            document.getElementById('customerEmoji').textContent = customers[gameState.customerIndex];
+            document.getElementById('orderFrosting').style.backgroundColor = order.frostingColor;
+            document.getElementById('orderTopping').textContent = order.toppingName;
+            document.getElementById('orderSprinkles').textContent = order.sprinkles ? 'Ja' : 'Nein';
+            document.getElementById('orderDrizzle').textContent = order.drizzle ? 'Ja' : 'Nein';
+            document.getElementById('orderGlitter').textContent = order.glitter ? 'Ja' : 'Nein';
+        }
+        
+        function goToKitchen() {
+            document.getElementById('storeScene').classList.remove('active');
+            document.getElementById('kitchenScene').classList.add('active');
+            resetCupcake();
+            gameState.waffleBaked = false;
+            
+            // Reset machine area
+            document.getElementById('machineArea').classList.remove('hidden');
+            document.getElementById('waffleResult').classList.remove('show');
+            document.getElementById('machineStatus').textContent = 'Bereit zum Backen!';
+            document.getElementById('bakeBtn').disabled = false;
+            document.getElementById('bakeBtn').textContent = '🔥 Waffel backen';
+            
+            // Hide decoration area
+            document.getElementById('decorationArea').classList.remove('visible');
+            
+            drawMachineIdle();
+        }
+        
+        function backToStore() {
+            document.getElementById('kitchenScene').classList.remove('active');
+            document.getElementById('storeScene').classList.add('active');
+        }
+        
+        // Waffle Machine
+        function drawMachineIdle() {
+            machineCtx.fillStyle = '#654321';
+            machineCtx.fillRect(20, 20, 140, 60);
+            machineCtx.fillStyle = '#8B4513';
+            machineCtx.fillRect(25, 25, 130, 50);
+            
+            // Status light
+            machineCtx.fillStyle = '#4CAF50';
+            machineCtx.beginPath();
+            machineCtx.arc(145, 15, 8, 0, Math.PI * 2);
+            machineCtx.fill();
+        }
+        
+        function bakeWaffle() {
+            const btn = document.getElementById('bakeBtn');
+            const status = document.getElementById('machineStatus');
+            const result = document.getElementById('waffleResult');
+            
+            btn.disabled = true;
+            status.textContent = '🫠 Waffel wird gebacken...';
+            
+            // Baking animation
+            let progress = 0;
+            const bakeInterval = setInterval(() => {
+                progress += 5;
+                machineCtx.fillStyle = '#654321';
+                machineCtx.fillRect(20, 20, 140, 60);
+                
+                // Color gets darker
+                machineCtx.fillStyle = `rgb(${139 - progress}, ${69 - progress/2}, ${19})`;
+                machineCtx.fillRect(25 + progress/4, 25 + progress/4, 130 - progress/2, 50 - progress/2);
+                
+                if (progress >= 100) {
+                    clearInterval(bakeInterval);
+                    gameState.waffleBaked = true;
+                    status.textContent = '✨ Fertig!';
+                    result.classList.add('show');
+                    drawWaffle();
+                    btn.textContent = '✓ Waffel bereit';
+                    
+                    // After a short delay, hide machine and show decoration controls
+                    setTimeout(() => {
+                        document.getElementById('machineArea').classList.add('hidden');
+                        document.getElementById('decorationArea').classList.add('visible');
+                    }, 1000);
+                }
+            }, 50);
+        }
+        
+        function drawWaffle() {
+            waffleCtx.clearRect(0, 0, 120, 120);
+            
+            // Waffle base
+            const gradient = waffleCtx.createRadialGradient(60, 60, 0, 60, 60, 60);
+            gradient.addColorStop(0, '#D2691E');
+            gradient.addColorStop(1, '#8B4513');
+            
+            waffleCtx.fillStyle = gradient;
+            waffleCtx.beginPath();
+            waffleCtx.ellipse(60, 60, 50, 40, 0, 0, Math.PI * 2);
+            waffleCtx.fill();
+            
+            // Waffle pattern
+            waffleCtx.strokeStyle = '#654321';
+            waffleCtx.lineWidth = 2;
+            
+            for (let x = 25; x < 100; x += 15) {
+                for (let y = 35; y < 90; y += 12) {
+                    waffleCtx.beginPath();
+                    waffleCtx.rect(x, y, 10, 8);
+                    waffleCtx.stroke();
+                }
+            }
+        }
+        
+        // UI Initialization
+        function initUI() {
+            // Frosting colors
+            const frostingContainer = document.getElementById('frostingColors');
+            frostingColors.forEach((fc, index) => {
+                const btn = document.createElement('button');
+                btn.className = 'color-btn' + (index === 0 ? ' active' : '');
+                btn.style.backgroundColor = fc.color;
+                btn.onclick = () => setFrostingColor(fc.color, btn);
+                frostingContainer.appendChild(btn);
+            });
+            
+            // Toppings
+            const toppingContainer = document.getElementById('toppingButtons');
+            toppings.forEach((t, index) => {
+                const btn = document.createElement('button');
+                btn.className = 'topping-btn';
+                btn.textContent = t.name;
+                btn.onclick = () => setTopping(t.type, btn);
+                toppingContainer.appendChild(btn);
+            });
+            
+            generateExtras();
+        }
+        
+        function setFrostingColor(color, btn) {
+            state.frostingColor = color;
+            document.querySelectorAll('#frostingColors .color-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            drawCupcake();
+        }
+        
+        function addSprinkles() {
+            for (let i = 0; i < 15; i++) {
+                const angle = Math.random() * Math.PI * 0.8 + Math.PI * 0.1;
+                const dist = Math.random() * 70 + 20;
+                state.sprinkles.push({
+                    x: 250 + Math.cos(angle) * dist,
+                    y: 230 - Math.sin(angle) * dist * 0.7,
+                    color: sprinkleColors[Math.floor(Math.random() * sprinkleColors.length)],
+                    rotation: Math.random() * Math.PI,
+                    type: Math.random() > 0.5 ? 'rect' : 'oval'
+                });
+            }
+            drawCupcake();
+        }
+        
+        function clearSprinkles() {
+            state.sprinkles = [];
+            drawCupcake();
+        }
+        
+        function setTopping(type, btn) {
+            state.topping = state.topping === type ? null : type;
+            const buttons = document.querySelectorAll('#toppingButtons .topping-btn');
+            buttons.forEach(b => b.classList.remove('active'));
+            if (state.topping) {
+                btn.classList.add('active');
+            }
+            drawCupcake();
+        }
+        
+        function toggleDrizzle() {
+            state.drizzle = !state.drizzle;
+            const btn = document.getElementById('drizzleBtn');
+            btn.classList.toggle('active');
+            drawCupcake();
+        }
+        
+        function toggleGlitter() {
+            state.glitter = !state.glitter;
+            const btn = document.getElementById('glitterBtn');
+            btn.classList.toggle('active');
+            drawCupcake();
+        }
+        
+        function generateExtras() {
+            state.extras = [];
+            for (let i = 0; i < 15; i++) {
+                const angle = Math.random() * Math.PI * 0.7 + Math.PI * 0.15;
+                const dist = Math.random() * 80 + 15;
+                state.extras.push({
+                    x: 250 + Math.cos(angle) * dist,
+                    y: 210 - Math.sin(angle) * dist * 0.6,
+                    color: sprinkleColors[Math.floor(Math.random() * sprinkleColors.length)],
+                    size: Math.random() * 5 + 3,
+                    rotation: Math.random() * Math.PI * 2
+                });
+            }
+        }
+        
+        function resetCupcake() {
+            state.frostingColor = '#FFB6C1';
+            state.sprinkles = [];
+            state.topping = null;
+            state.drizzle = false;
+            state.glitter = false;
+            generateExtras();
+            
+            document.querySelectorAll('#frostingColors .color-btn').forEach((b, i) => {
+                b.classList.toggle('active', i === 0);
+            });
+            document.querySelectorAll('#toppingButtons .topping-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('drizzleBtn').classList.remove('active');
+            document.getElementById('glitterBtn').classList.remove('active');
+            
+            drawCupcake();
+        }
+        
+        // Order Validation
+        function finishOrder() {
+            if (!gameState.waffleBaked) {
+                alert('Bitte backe zuerst eine Waffel!');
+                return;
+            }
+            
+            const order = gameState.currentOrder;
+            const checks = [];
+            let correct = 0;
+            
+            // Check frosting
+            const frostingMatch = state.frostingColor === order.frostingColor;
+            checks.push({
+                name: 'Frosting',
+                correct: frostingMatch,
+                expected: order.frostingName,
+                got: frostingColors.find(f => f.color === state.frostingColor)?.name || 'Andere'
+            });
+            if (frostingMatch) correct++;
+            
+            // Check topping
+            const toppingMatch = state.topping === order.topping;
+            checks.push({
+                name: 'Topping',
+                correct: toppingMatch,
+                expected: order.toppingName,
+                got: state.topping ? toppings.find(t => t.type === state.topping)?.name : 'Keins'
+            });
+            if (toppingMatch) correct++;
+            
+            // Check sprinkles
+            const sprinklesMatch = (state.sprinkles.length > 0) === order.sprinkles;
+            checks.push({
+                name: 'Streusel',
+                correct: sprinklesMatch,
+                expected: order.sprinkles ? 'Ja' : 'Nein',
+                got: state.sprinkles.length > 0 ? 'Ja' : 'Nein'
+            });
+            if (sprinklesMatch) correct++;
+            
+            // Check drizzle
+            const drizzleMatch = state.drizzle === order.drizzle;
+            checks.push({
+                name: 'Schoko-Guss',
+                correct: drizzleMatch,
+                expected: order.drizzle ? 'Ja' : 'Nein',
+                got: state.drizzle ? 'Ja' : 'Nein'
+            });
+            if (drizzleMatch) correct++;
+            
+            // Check glitter
+            const glitterMatch = state.glitter === order.glitter;
+            checks.push({
+                name: 'Glitzer',
+                correct: glitterMatch,
+                expected: order.glitter ? 'Ja' : 'Nein',
+                got: state.glitter ? 'Ja' : 'Nein'
+            });
+            if (glitterMatch) correct++;
+            
+            // Calculate score
+            const points = correct * 20;
+            gameState.score += points;
+            document.getElementById('score').textContent = gameState.score;
+            
+            // Show result
+            showResult(correct, checks);
+        }
+        
+        function showResult(correct, checks) {
+            const overlay = document.getElementById('resultOverlay');
+            const emoji = document.getElementById('resultEmoji');
+            const title = document.getElementById('resultTitle');
+            const message = document.getElementById('resultMessage');
+            const checkDiv = document.getElementById('orderCheck');
+            
+            if (correct === 5) {
+                emoji.textContent = '🌟';
+                title.textContent = 'Perfekt!';
+                message.textContent = 'Dein Cupcake ist genau richtig! +100 Punkte';
+            } else if (correct >= 3) {
+                emoji.textContent = '😊';
+                title.textContent = 'Gut gemacht!';
+                message.textContent = `Du hast ${correct} von 5 richtig. +${correct * 20} Punkte`;
+            } else {
+                emoji.textContent = '😢';
+                title.textContent = 'Oh nein!';
+                message.textContent = 'Versuch es nochmal! Die Bestellung war anders.';
+            }
+            
+            checkDiv.innerHTML = checks.map(c => `
+                <div class="check-item ${c.correct ? 'correct' : 'wrong'}">
+                    <span>${c.correct ? '✓' : '✗'}</span>
+                    <span>${c.name}: ${c.got}</span>
+                    <span style="margin-left: auto; opacity: 0.7;">(${c.expected})</span>
+                </div>
+            `).join('');
+            
+            overlay.classList.add('show');
+        }
+        
+        function nextCustomer() {
+            document.getElementById('resultOverlay').classList.remove('show');
+            generateNewOrder();
+            backToStore();
+        }
+        
+        // Drawing functions
+        function drawCupcake() {
+            // Background
+            ctx.fillStyle = state.backgroundColor;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.1)';
+            ctx.beginPath();
+            ctx.ellipse(250, 430, 100, 20, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            drawWrapper();
+            drawFrosting();
+            drawSprinkles();
+            drawExtras();
+            drawDrizzle();
+            drawTopping();
+            drawGlitter();
+        }
+        
+        function drawWrapper() {
+            const gradient = ctx.createLinearGradient(170, 290, 330, 430);
+            gradient.addColorStop(0, '#F4A460');
+            gradient.addColorStop(0.5, '#DEB887');
+            gradient.addColorStop(1, '#CD853F');
+            
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.moveTo(175, 290);
+            ctx.lineTo(190, 420);
+            ctx.quadraticCurveTo(250, 440, 310, 420);
+            ctx.lineTo(325, 290);
+            ctx.closePath();
+            ctx.fill();
+            
+            ctx.strokeStyle = '#C4956A';
+            ctx.lineWidth = 2;
+            for (let y = 305; y < 420; y += 18) {
+                const startX = 178 + (y - 290) * 0.13;
+                const endX = 322 - (y - 290) * 0.13;
+                ctx.beginPath();
+                ctx.moveTo(startX, y);
+                ctx.lineTo(endX, y);
+                ctx.stroke();
+            }
+            
+            ctx.strokeStyle = '#E8C89E';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(175, 290);
+            ctx.quadraticCurveTo(250, 280, 325, 290);
+            ctx.stroke();
+        }
+        
+        function drawFrosting() {
+            const color = state.frostingColor;
+            
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(150, 290);
+            
+            for (let x = 150; x <= 350; x += 25) {
+                ctx.quadraticCurveTo(x + 12, 265, x + 25, 290);
+            }
+            ctx.lineTo(350, 290);
+            ctx.closePath();
+            ctx.fill();
+            
+            const gradient = ctx.createRadialGradient(250, 230, 0, 250, 230, 120);
+            gradient.addColorStop(0, lightenColor(color, 30));
+            gradient.addColorStop(1, color);
+            
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.moveTo(160, 290);
+            ctx.bezierCurveTo(160, 250, 190, 170, 250, 150);
+            ctx.bezierCurveTo(310, 170, 340, 250, 340, 290);
+            ctx.quadraticCurveTo(295, 280, 250, 290);
+            ctx.quadraticCurveTo(205, 280, 160, 290);
+            ctx.closePath();
+            ctx.fill();
+            
+            ctx.fillStyle = lightenColor(color, 20);
+            ctx.beginPath();
+            ctx.ellipse(250, 170, 35, 22, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.ellipse(210, 195, 22, 15, -0.3, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.ellipse(290, 195, 22, 15, 0.3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        function drawSprinkles() {
+            state.sprinkles.forEach(sprinkle => {
+                ctx.save();
+                ctx.translate(sprinkle.x, sprinkle.y);
+                ctx.rotate(sprinkle.rotation);
+                ctx.fillStyle = sprinkle.color;
+                
+                if (sprinkle.type === 'rect') {
+                    ctx.fillRect(-3.5, -1.5, 7, 3);
+                } else {
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, 3.5, 2, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            });
+        }
+        
+        function drawExtras() {
+            state.extras.forEach(extra => {
+                ctx.save();
+                ctx.translate(extra.x, extra.y);
+                ctx.rotate(extra.rotation);
+                ctx.fillStyle = extra.color;
+                ctx.globalAlpha = 0.7;
+                
+                ctx.beginPath();
+                ctx.arc(0, 0, extra.size, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.fillStyle = 'white';
+                ctx.globalAlpha = 0.4;
+                ctx.beginPath();
+                ctx.arc(-extra.size * 0.3, -extra.size * 0.3, extra.size * 0.3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            });
+        }
+        
+        function drawDrizzle() {
+            if (!state.drizzle) return;
+            
+            ctx.strokeStyle = '#8B4513';
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            ctx.globalAlpha = 0.8;
+            
+            const drizzleLines = [
+                { start: { x: 185, y: 185 }, end: { x: 192, y: 235 } },
+                { start: { x: 210, y: 170 }, end: { x: 215, y: 230 } },
+                { start: { x: 235, y: 160 }, end: { x: 240, y: 245 } },
+                { start: { x: 260, y: 160 }, end: { x: 265, y: 245 } },
+                { start: { x: 285, y: 170 }, end: { x: 290, y: 230 } },
+                { start: { x: 310, y: 185 }, end: { x: 315, y: 235 } }
+            ];
+            
+            drizzleLines.forEach(line => {
+                ctx.beginPath();
+                ctx.moveTo(line.start.x, line.start.y);
+                const midX = (line.start.x + line.end.x) / 2 + (Math.random() - 0.5) * 8;
+                const midY = (line.start.y + line.end.y) / 2;
+                ctx.quadraticCurveTo(midX, midY, line.end.x, line.end.y);
+                ctx.stroke();
+            });
+            
+            ctx.globalAlpha = 1;
+        }
+        
+        function drawTopping() {
+            if (!state.topping) return;
+            
+            switch(state.topping) {
+                case 'cherry': drawCherry(); break;
+                case 'strawberry': drawStrawberry(); break;
+                case 'blueberry': drawBlueberry(); break;
+                case 'star': drawStar(); break;
+                case 'heart': drawHeart(); break;
+            }
+        }
+        
+        function drawCherry() {
+            ctx.strokeStyle = '#228B22';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.moveTo(250, 125);
+            ctx.quadraticCurveTo(258, 105, 275, 98);
+            ctx.stroke();
+            
+            const gradient = ctx.createRadialGradient(246, 142, 0, 250, 145, 24);
+            gradient.addColorStop(0, '#FF4444');
+            gradient.addColorStop(1, '#CC0000');
+            
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(250, 145, 24, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.fillStyle = 'white';
+            ctx.globalAlpha = 0.5;
+            ctx.beginPath();
+            ctx.arc(242, 137, 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+        }
+        
+        function drawStrawberry() {
+            const gradient = ctx.createRadialGradient(250, 155, 0, 250, 160, 30);
+            gradient.addColorStop(0, '#FF6B6B');
+            gradient.addColorStop(1, '#CC3333');
+            
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.moveTo(250, 125);
+            ctx.bezierCurveTo(275, 130, 285, 155, 275, 178);
+            ctx.bezierCurveTo(265, 190, 235, 190, 225, 178);
+            ctx.bezierCurveTo(215, 155, 225, 130, 250, 125);
+            ctx.fill();
+            
+            ctx.fillStyle = '#FFDD99';
+            const seeds = [[242, 145], [258, 145], [238, 162], [250, 162], [262, 162]];
+            seeds.forEach(s => {
+                ctx.beginPath();
+                ctx.ellipse(s[0], s[1], 2, 2.5, 0, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            
+            ctx.fillStyle = '#32CD32';
+            for (let i = 0; i < 5; i++) {
+                const angle = (i - 2) * 0.4;
+                ctx.beginPath();
+                ctx.moveTo(250, 125);
+                ctx.lineTo(250 + Math.cos(angle) * 12, 121 - Math.sin(Math.abs(angle)) * 6);
+                ctx.lineTo(250 + Math.cos(angle + 0.3) * 8, 125);
+                ctx.fill();
+            }
+        }
+        
+        function drawBlueberry() {
+            const gradient = ctx.createRadialGradient(246, 150, 0, 250, 155, 24);
+            gradient.addColorStop(0, '#6B8EE8');
+            gradient.addColorStop(1, '#4169E1');
+            
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(250, 155, 24, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.fillStyle = 'white';
+            ctx.globalAlpha = 0.4;
+            ctx.beginPath();
+            ctx.arc(242, 147, 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            
+            ctx.fillStyle = '#2E8B57';
+            ctx.beginPath();
+            ctx.moveTo(238, 130);
+            ctx.lineTo(242, 122);
+            ctx.lineTo(246, 130);
+            ctx.lineTo(250, 120);
+            ctx.lineTo(254, 130);
+            ctx.lineTo(258, 122);
+            ctx.lineTo(262, 130);
+            ctx.closePath();
+            ctx.fill();
+        }
+        
+        function drawStar() {
+            ctx.save();
+            ctx.translate(250, 145);
+            
+            ctx.fillStyle = '#FFD700';
+            ctx.beginPath();
+            for (let i = 0; i < 5; i++) {
+                const angle = (i * 4 * Math.PI / 5) - Math.PI / 2;
+                const x = Math.cos(angle) * 25;
+                const y = Math.sin(angle) * 25;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.fill();
+            
+            ctx.fillStyle = 'white';
+            ctx.globalAlpha = 0.5;
+            ctx.beginPath();
+            ctx.arc(-6, -8, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            
+            ctx.restore();
+        }
+        
+        function drawHeart() {
+            ctx.save();
+            ctx.translate(250, 145);
+            
+            const gradient = ctx.createRadialGradient(0, -4, 0, 0, 0, 25);
+            gradient.addColorStop(0, '#FF69B4');
+            gradient.addColorStop(1, '#FF1493');
+            
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.moveTo(0, 8);
+            ctx.bezierCurveTo(-20, -8, -25, -20, 0, -12);
+            ctx.bezierCurveTo(25, -20, 20, -8, 0, 8);
+            ctx.fill();
+            
+            ctx.fillStyle = 'white';
+            ctx.globalAlpha = 0.4;
+            ctx.beginPath();
+            ctx.ellipse(-6, -14, 4, 2.5, -0.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            
+            ctx.restore();
+        }
+        
+        function drawGlitter() {
+            if (!state.glitter) return;
+            
+            const glitterPositions = [
+                [210, 170], [290, 170], [185, 210], [315, 210],
+                [235, 155], [265, 155], [200, 235], [300, 235],
+                [250, 185], [225, 200], [275, 200]
+            ];
+            
+            glitterPositions.forEach((pos, i) => {
+                const size = 2 + (i % 3);
+                const alpha = 0.3 + (i % 4) * 0.15;
+                
+                ctx.fillStyle = '#FFD700';
+                ctx.globalAlpha = alpha * 0.3;
+                ctx.beginPath();
+                ctx.arc(pos[0], pos[1], size * 2, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.fillStyle = 'white';
+                ctx.globalAlpha = alpha;
+                ctx.beginPath();
+                ctx.arc(pos[0], pos[1], size, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 1;
+                ctx.globalAlpha = alpha * 0.8;
+                ctx.beginPath();
+                ctx.moveTo(pos[0] - size * 1.5, pos[1]);
+                ctx.lineTo(pos[0] + size * 1.5, pos[1]);
+                ctx.moveTo(pos[0], pos[1] - size * 1.5);
+                ctx.lineTo(pos[0], pos[1] + size * 1.5);
+                ctx.stroke();
+            });
+            
+            ctx.globalAlpha = 1;
+        }
+        
+        function lightenColor(color, percent) {
+            const num = parseInt(color.replace('#', ''), 16);
+            const amt = Math.round(2.55 * percent);
+            const R = (num >> 16) + amt;
+            const G = (num >> 8 & 0x00FF) + amt;
+            const B = (num & 0x0000FF) + amt;
+            return '#' + (0x1000000 + 
+                (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 + 
+                (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 + 
+                (B < 255 ? B < 1 ? 0 : B : 255)
+            ).toString(16).slice(1);
+        }
+        
+        // Start game
+        initGame();
+    </script>
+</body>
+</html>
