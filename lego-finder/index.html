@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>LEGO-Stein-Finder</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>🧱 LEGO‑Finder</h1>
+    <button id="btn-change-part" class="chip" hidden>
+      <img id="chip-img" alt=""><span id="chip-name"></span>
+    </button>
+  </header>
+
+  <!-- Screen 1: Stein erfassen -->
+  <section id="screen-setup">
+    <p class="hint">Fotografiere den gesuchten Stein — einzeln, auf neutralem Hintergrund, bei gutem Licht.</p>
+    <label class="big-btn">
+      📷 Stein fotografieren
+      <input id="ref-input" type="file" accept="image/*" capture="environment" hidden>
+    </label>
+    <div id="ref-preview-wrap" hidden>
+      <canvas id="ref-canvas"></canvas>
+    </div>
+    <p id="ref-status" class="hint" hidden></p>
+    <div id="ref-results" class="cards"></div>
+    <div id="setup-extra" hidden>
+      <p id="color-hint" class="hint">Tippe im Foto auf den Stein, um seine Farbe zu bestimmen.</p>
+      <div class="row">
+        <span>Gewählte Farbe:</span><span id="color-swatch" class="swatch"></span>
+      </div>
+      <div class="row toggle-row">
+        <label><input type="radio" name="mode" value="shape+color" checked> Form + Farbe</label>
+        <label><input type="radio" name="mode" value="shape"> Nur Form</label>
+      </div>
+      <button id="btn-start-search" class="big-btn">🔍 Kiste durchsuchen</button>
+    </div>
+  </section>
+
+  <!-- Screen 2: Kiste durchsuchen -->
+  <section id="screen-search" hidden>
+    <div id="viewport">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="freeze" hidden></canvas>
+      <canvas id="overlay"></canvas>
+    </div>
+    <div id="search-controls">
+      <div id="progress" hidden>
+        <div id="progress-track"><div id="progress-bar"></div></div>
+        <span id="progress-text"></span>
+      </div>
+      <p id="search-status" class="hint"></p>
+      <button id="btn-scan" class="big-btn">🔍 Suchen</button>
+      <button id="btn-resume" class="big-btn secondary" hidden>▶ Weiter suchen</button>
+      <label id="scan-file-label" class="big-btn" hidden>
+        📷 Foto der Kiste aufnehmen
+        <input id="scan-input" type="file" accept="image/*" capture="environment" hidden>
+      </label>
+    </div>
+  </section>
+
+  <!-- Zoom-Ansicht eines Treffers -->
+  <div id="zoom-modal" hidden>
+    <canvas id="zoom-canvas"></canvas>
+    <p id="zoom-info"></p>
+    <button id="btn-zoom-close" class="big-btn secondary">Schließen</button>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
