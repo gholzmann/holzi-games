@@ -4,13 +4,14 @@ import {
   canvasToBlob, cropToBlob, downscaleImageData,
 } from './camera.js';
 import { identifyPart, identifyAll } from './brickognize.js';
-import { findCandidates } from './segmentation.js';
+import { findCandidates, findShapeCandidates, describeShape } from './segmentation.js';
 import { averageColorAt, averageColorInBox, isColorMatch, hsvToRgb } from './color.js';
 
 const STORAGE_KEY = 'legofinder.v1';
-const MAX_IMAGE_WIDTH = 1600; // Vollbild fürs Ausschneiden der Crops
-const SEG_WIDTH = 480;        // Auflösung für die Segmentierung
-const MAX_CANDIDATES = 20;    // Obergrenze API-Anfragen pro Scan (Rate-Limit ~60/min)
+const MAX_IMAGE_WIDTH = 3000; // Vollbild fürs Ausschneiden der Crops (mehr Pixel pro Stein)
+const SEG_WIDTH = 800;        // Auflösung für die Segmentierung (trennt eng liegende Steine)
+const MAX_CANDIDATES = 20;    // Obergrenze API-Anfragen im Farb-Modus (Farbmaske filtert stark)
+const MAX_SHAPE_CANDIDATES = 36; // Nur-Form: mehr Anfragen, weil kein Farbfilter (~40 s Scan)
 const SCORE_MIN = 0.12;       // Mindest-Score für einen Treffer (empirisch justieren)
 const COLOR_TOLERANCE = 0.18; // Toleranz beim Farbabgleich der Treffer
 
@@ -30,7 +31,7 @@ const els = {
   btnZoomClose: $('btn-zoom-close'),
 };
 
-let state = { part: null, colorHsv: null, mode: 'shape+color' };
+let state = { part: null, colorHsv: null, mode: 'shape+color', refShape: null };
 let refCanvas = null; // Referenzfoto (max 1024 px) fürs Farb-Picken
 let scanCanvas = null;   // eingefrorenes Kistenbild (Vollauflösung)
 let matches = [];        // [{box, score, colorOk}] des letzten Scans
@@ -42,7 +43,7 @@ function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 function loadState() {
   try {
     const s = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (s && s.part) state = { part: s.part, colorHsv: s.colorHsv || null, mode: (s.mode === 'shape' || s.mode === 'shape+color') ? s.mode : 'shape+color' };
+    if (s && s.part) state = { part: s.part, colorHsv: s.colorHsv || null, mode: (s.mode === 'shape' || s.mode === 'shape+color') ? s.mode : 'shape+color', refShape: s.refShape || null };
   } catch { /* kaputter Eintrag — Standardzustand behalten */ }
 }
 
@@ -93,6 +94,7 @@ els.refInput.addEventListener('change', async () => {
   if (!file) return;
   state.part = null;
   state.colorHsv = null;
+  state.refShape = null;
   els.setupExtra.hidden = true;
   els.refResults.innerHTML = '';
   updateChip();
@@ -108,6 +110,12 @@ els.refInput.addEventListener('change', async () => {
   els.refCanvas.height = refCanvas.height;
   ctx.drawImage(refCanvas, 0, 0);
   els.refWrap.hidden = false;
+  // Form-Deskriptor des Referenzsteins bestimmen (für die Priorisierung im Nur-Form-Modus).
+  try {
+    const small = downscaleImageData(refCanvas, 256);
+    const shape = describeShape(small);
+    state.refShape = shape ? { aspect: shape.aspect, extent: shape.extent } : null;
+  } catch { state.refShape = null; }
   setRefStatus('Stein wird identifiziert …');
   try {
     const items = await identifyPart(await canvasToBlob(refCanvas));
@@ -240,15 +248,17 @@ async function runScan(sourceCanvas) {
       return;
     }
     setSearchStatus('Suche Kandidaten …');
-    const fullData = sourceCanvas.getContext('2d')
-      .getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
     const small = downscaleImageData(sourceCanvas, SEG_WIDTH);
     const scale = sourceCanvas.width / small.width;
     const useColor = state.mode === 'shape+color' && !!state.colorHsv;
-    const boxes = findCandidates(small, {
-      targetHsv: useColor ? state.colorHsv : null,
-      maxCandidates: MAX_CANDIDATES,
-    }).map((b) => ({
+    // Vollbild-Pixel nur im Farb-Modus laden (bei 3000 px teuer).
+    const fullData = useColor
+      ? sourceCanvas.getContext('2d').getImageData(0, 0, sourceCanvas.width, sourceCanvas.height)
+      : null;
+    const raw = useColor
+      ? findCandidates(small, { targetHsv: state.colorHsv, maxCandidates: MAX_CANDIDATES })
+      : findShapeCandidates(small, { refShape: state.refShape, maxCandidates: MAX_SHAPE_CANDIDATES });
+    const boxes = raw.map((b) => ({
       x: Math.round(b.x * scale),
       y: Math.round(b.y * scale),
       w: Math.round(b.w * scale),
@@ -281,7 +291,8 @@ async function runScan(sourceCanvas) {
     let msg;
     if (green) msg = `${green} Treffer — Rahmen antippen zum Vergrößern.`;
     else if (matches.length) msg = 'Nur Form-Treffer in anderer Farbe gefunden (gelb).';
-    else msg = 'Nicht gefunden — Steine umrühren oder näher herangehen und neu scannen.';
+    else if (useColor) msg = 'Nicht gefunden — Steine umrühren oder näher herangehen und neu scannen.';
+    else msg = `Nicht gefunden — geprüft wurden die ${boxes.length} form-ähnlichsten Kandidaten, nicht alle Steine. Umrühren, näher heran oder erneut scannen.`;
     if (failed) msg += ` (${failed} Kandidaten wegen API-Fehlern übersprungen.)`;
     finishScan(msg);
   } catch (err) {

@@ -109,6 +109,113 @@ export function dedupeBoxes(boxes, iouThreshold = 0.4) {
   return kept;
 }
 
+// ---------- Formbasierte Kandidaten (Modus „Nur Form") ----------
+
+// Seitenverhältnis, skala- und rotationstolerant: 0 (sehr länglich) .. 1 (quadratisch).
+export function aspectRatio({ w, h }) {
+  const hi = Math.max(w, h);
+  return hi === 0 ? 0 : Math.min(w, h) / hi;
+}
+
+// Füllgrad der Bounding-Box (area / w·h), 0 .. 1 — unterscheidet kompakte von sparrigen Formen.
+export function extent({ w, h, area }) {
+  const bb = w * h;
+  return bb === 0 ? 0 : Math.min(1, area / bb);
+}
+
+export function descriptorOf(box) {
+  return { aspect: aspectRatio(box), extent: extent(box) };
+}
+
+// Abstand zweier Form-Deskriptoren (klein = ähnlich). Seitenverhältnis zählt mehr als Füllgrad.
+export function shapeDistance(a, b) {
+  return 0.6 * Math.abs(a.aspect - b.aspect) + 0.4 * Math.abs(a.extent - b.extent);
+}
+
+// Median-Größe einer Box-Liste — robuste Schätzung der Einzel-Steingröße im Bild.
+export function medianBoxSize(boxes) {
+  if (!boxes.length) return { w: 0, h: 0, area: 0 };
+  const med = (vals) => {
+    const s = [...vals].sort((a, b) => a - b);
+    const m = s.length >> 1;
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  };
+  return {
+    w: med(boxes.map((b) => b.w)),
+    h: med(boxes.map((b) => b.h)),
+    area: med(boxes.map((b) => b.area)),
+  };
+}
+
+// Zerlegt eine (zu große) Box in ein Raster ~stein-großer Zellen, statt sie zu verwerfen.
+export function splitBox(box, unit) {
+  const cols = Math.max(1, Math.round(box.w / unit.w));
+  const rows = Math.max(1, Math.round(box.h / unit.h));
+  if (cols === 1 && rows === 1) return [{ ...box }];
+  const cells = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const x = Math.round(box.x + (c * box.w) / cols);
+      const y = Math.round(box.y + (r * box.h) / rows);
+      const w = Math.round(box.x + ((c + 1) * box.w) / cols) - x;
+      const h = Math.round(box.y + ((r + 1) * box.h) / rows) - y;
+      cells.push({ x, y, w, h, area: w * h });
+    }
+  }
+  return cells;
+}
+
+// Deskriptor des Referenzsteins: Vordergrund gegen einen aus den Rändern geschätzten
+// (neutralen) Hintergrund segmentieren, größte Komponente vermessen.
+export function describeShape(imageData, { tolerance = 0.16, minAreaFrac = 0.02 } = {}) {
+  const { data, width, height } = imageData;
+  let r = 0, g = 0, b = 0, n = 0;
+  const sample = (x, y) => {
+    const i = (y * width + x) * 4;
+    r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+  };
+  for (let x = 0; x < width; x++) { sample(x, 0); sample(x, height - 1); }
+  for (let y = 0; y < height; y++) { sample(0, y); sample(width - 1, y); }
+  if (n === 0) return null;
+  const bg = rgbToHsv(r / n, g / n, b / n);
+  const mask = new Uint8Array(width * height);
+  for (let p = 0; p < width * height; p++) {
+    const i = p * 4;
+    if (colorDistance(rgbToHsv(data[i], data[i + 1], data[i + 2]), bg) > tolerance) mask[p] = 1;
+  }
+  const minArea = Math.max(20, Math.round(width * height * minAreaFrac));
+  const comps = findComponents(mask, width, height, { minArea });
+  if (!comps.length) return null;
+  comps.sort((a, b) => b.area - a.area);
+  const box = comps[0];
+  return { aspect: aspectRatio(box), extent: extent(box), box };
+}
+
+// Kandidaten für den Modus „Nur Form": alle Steine segmentieren, verschmolzene Blobs
+// in stein-große Zellen splitten, nach Formähnlichkeit zum Referenzstein priorisieren.
+export function findShapeCandidates(imageData, { refShape = null, maxCandidates = 36 } = {}) {
+  const { width, height } = imageData;
+  const minArea = Math.max(20, Math.round(width * height * 0.0003));
+  const maxArea = Math.round(width * height * 0.9); // große Blobs behalten (werden gesplittet)
+  const blobs = findColorBlobs(imageData, { minArea, maxArea });
+  if (!blobs.length) return tileGrid(width, height).slice(0, maxCandidates);
+  const unit = medianBoxSize(blobs);
+  const unitArea = unit.area || minArea;
+  const boxes = [];
+  for (const box of blobs) {
+    if (box.area > 1.8 * unitArea) boxes.push(...splitBox(box, unit));
+    else boxes.push(box);
+  }
+  for (const box of boxes) {
+    if (box.area == null) box.area = box.w * box.h;
+    const shapePen = refShape ? shapeDistance(descriptorOf(box), refShape) : 0;
+    const sizePen = 0.15 * Math.abs(Math.log((box.area || 1) / unitArea));
+    box.shapeScore = -(shapePen + sizePen); // höher = besser
+  }
+  boxes.sort((a, b) => b.shapeScore - a.shapeScore);
+  return dedupeBoxes(boxes).slice(0, maxCandidates);
+}
+
 // Hauptfunktion: priorisierte Kandidaten-Boxen für einen Scan.
 export function findCandidates(imageData, { targetHsv = null, maxCandidates = 20 } = {}) {
   const { width, height } = imageData;

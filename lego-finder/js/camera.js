@@ -2,7 +2,13 @@
 
 export async function startCamera(video) {
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 } },
+    // Möglichst hohe Auflösung: bei einem Weitfoto der Kiste bleiben so mehr
+    // Pixel pro Stein übrig — entscheidend, damit Brickognize die Crops erkennt.
+    video: {
+      facingMode: { ideal: 'environment' },
+      width: { ideal: 3840 },
+      height: { ideal: 2160 },
+    },
     audio: false,
   });
   video.srcObject = stream;

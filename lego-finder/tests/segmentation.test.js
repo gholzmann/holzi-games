@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   buildColorMask, findComponents, findColorBlobs, tileGrid,
   iou, dedupeBoxes, quantizeBucket, findCandidates,
+  aspectRatio, extent, descriptorOf, shapeDistance,
+  medianBoxSize, splitBox, describeShape, findShapeCandidates,
 } from '../js/segmentation.js';
 import { makeImage } from './helpers.js';
 
@@ -94,4 +96,91 @@ test('findCandidates ohne Zielfarbe: Blobs + Kacheln, gedeckelt', () => {
   assert.ok(boxes.length <= 20);
   // enthält eine Box, die den roten Fleck überlappt
   assert.ok(boxes.some((b) => iou(b, { x: 10, y: 5, w: 15, h: 15 }) > 0.3));
+});
+
+// ---------- Formbasierte Kandidaten (Modus „Nur Form") ----------
+
+test('aspectRatio: quadratisch = 1, doppelt so hoch = 0.5', () => {
+  assert.equal(aspectRatio({ w: 10, h: 10 }), 1);
+  assert.equal(aspectRatio({ w: 10, h: 20 }), 0.5);
+  assert.equal(aspectRatio({ w: 20, h: 10 }), 0.5);
+});
+
+test('extent: Füllgrad der Bounding-Box', () => {
+  assert.equal(extent({ w: 10, h: 10, area: 100 }), 1);
+  assert.equal(extent({ w: 10, h: 10, area: 50 }), 0.5);
+});
+
+test('descriptorOf: bündelt aspect + extent', () => {
+  assert.deepEqual(descriptorOf({ w: 10, h: 20, area: 100 }), { aspect: 0.5, extent: 0.5 });
+});
+
+test('shapeDistance: identisch = 0, unterschiedliches Seitenverhältnis > 0', () => {
+  const a = { aspect: 0.5, extent: 1 };
+  assert.equal(shapeDistance(a, a), 0);
+  const d = shapeDistance({ aspect: 1, extent: 1 }, { aspect: 0.5, extent: 1 });
+  assert.ok(Math.abs(d - 0.3) < 1e-9, `d=${d}`);
+});
+
+test('medianBoxSize: robuste Median-Steingröße', () => {
+  const m = medianBoxSize([
+    { w: 4, h: 4, area: 16 },
+    { w: 10, h: 10, area: 100 },
+    { w: 40, h: 40, area: 1600 },
+  ]);
+  assert.deepEqual(m, { w: 10, h: 10, area: 100 });
+});
+
+test('splitBox: große Box wird in stein-große Zellen zerlegt', () => {
+  const cells = splitBox({ x: 0, y: 0, w: 40, h: 40, area: 1600 }, { w: 20, h: 20 });
+  assert.equal(cells.length, 4);
+  assert.deepEqual(
+    { x: cells[0].x, y: cells[0].y, w: cells[0].w, h: cells[0].h },
+    { x: 0, y: 0, w: 20, h: 20 });
+  assert.equal(cells[0].area, 400);
+});
+
+test('splitBox: Box in Steingröße bleibt unzerteilt', () => {
+  const cells = splitBox({ x: 0, y: 0, w: 15, h: 15, area: 200 }, { w: 20, h: 20 });
+  assert.equal(cells.length, 1);
+});
+
+test('describeShape: Referenzstein gegen neutralen Hintergrund', () => {
+  // roter Stein (20×24) mittig auf grauem Rand
+  const img = makeImage(40, 40, (x, y) =>
+    (x >= 10 && x < 30 && y >= 8 && y < 32 ? [200, 0, 0] : [128, 128, 128]));
+  const d = describeShape(img);
+  assert.ok(d, 'Deskriptor darf nicht null sein');
+  assert.equal(d.box.w, 20);
+  assert.equal(d.box.h, 24);
+  assert.ok(Math.abs(d.aspect - 20 / 24) < 0.02, `aspect=${d.aspect}`);
+  assert.ok(d.extent > 0.95, `extent=${d.extent}`);
+});
+
+test('describeShape: einfarbiges Bild ergibt null (kein Vordergrund)', () => {
+  const img = makeImage(40, 40, () => [128, 128, 128]);
+  assert.equal(describeShape(img), null);
+});
+
+test('findShapeCandidates: verschmolzener Blob wird gesplittet, alle Steine abgedeckt', () => {
+  // rot 20×20 (oben links), blau 20×20 (oben rechts), grün 40×20 (unten) — kein Hintergrund
+  const img = makeImage(40, 40, (x, y) => {
+    if (y < 20 && x < 20) return [200, 0, 0];
+    if (y < 20 && x >= 20) return [0, 0, 200];
+    return [0, 150, 60];
+  });
+  const boxes = findShapeCandidates(img, { maxCandidates: 20 });
+  // rot + blau + grün(gesplittet in 2) = 4
+  assert.equal(boxes.length, 4);
+});
+
+test('findShapeCandidates: refShape priorisiert den formähnlichsten Kandidaten', () => {
+  // roter Quadrat-Stein (20×20) mittig, umrahmt von blau (großer Rahmen)
+  const img = makeImage(40, 40, (x, y) =>
+    (x >= 10 && x < 30 && y >= 10 && y < 30 ? [200, 0, 0] : [0, 0, 200]));
+  const boxes = findShapeCandidates(img, { refShape: { aspect: 1, extent: 1 }, maxCandidates: 20 });
+  assert.ok(boxes.length >= 2);
+  // der quadratische, gefüllte rote Stein steht vorn
+  assert.equal(boxes[0].w, 20);
+  assert.equal(boxes[0].h, 20);
 });
